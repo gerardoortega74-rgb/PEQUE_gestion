@@ -448,7 +448,7 @@ function buildPdf(JsPDF, kind, d, emp, logo, firma) {
   if (cli.tel || cli.email) leftRows.push(['Contacto', [cli.tel, cli.email].filter(Boolean).join('\n')]);
   const rightRows = isP
     ? [['Fecha', fechaLarga(d.fecha)], ['Lugar', d.lugar || emp.lugar || ''], ['Referencia', d.numero || '—'], ['Validez', (d.validez ?? emp.validez ?? 30) + ' días desde la fecha de emisión']]
-    : [['Número', d.numero || 'BORRADOR'], ['Fecha', fmtDate(d.fecha)], ...(d.vencimiento ? [['Vencimiento', fmtDate(d.vencimiento)]] : []), ...(d.obra ? [['Obra', d.obra]] : [])];
+    : [['Número', d.numero || 'BORRADOR'], ['Fecha', fmtDate(d.fecha)], ...(d.vencimiento ? [['Vencimiento', fmtDate(d.vencimiento)]] : []), ...(d.presupuestoRef ? [['Presupuesto', d.presupuestoRef]] : []), ...(d.obra ? [['Obra', d.obra]] : [])];
   const y1 = infoTable('DATOS DEL CLIENTE', leftRows, true, y);
   const y2 = infoTable(isP ? 'DATOS DEL PRESUPUESTO' : 'DATOS DE LA FACTURA', rightRows, false, y);
   y = Math.max(y1, y2) + 9;
@@ -743,13 +743,16 @@ function chip(d, k, sub, right, extra = ''){
 }
 function presItem(p){
   const t = totals(p), e = p.estado || 'borrador';
-  return chip(p, 'presupuesto', esc(p.obra || fmtDate(p.fecha)), `<b>${eur(t.total)}</b>${pill(e)}`);
+  const a = facturasDe(p.id).length ? avancePres(p) : null;
+  const sub = esc(p.obra || fmtDate(p.fecha)) + (a ? ` <span style="color:var(--green-ink);font-weight:700">· facturado ${a.pct} %</span>` : '');
+  return chip(p, 'presupuesto', sub, `<b>${eur(t.total)}</b>${pill(e)}`);
 }
 function facItem(f, cobrarBtn){
   const t = totals(f), e = estadoFactura(f);
   let sub = fmtDate(f.fecha);
   if (e === 'vencida') sub = `<span style="color:var(--bad);font-weight:700">Vencida hace ${daysBetween(f.vencimiento, todayISO())} días</span>`;
   else if (e === 'pendiente' && f.vencimiento) sub = `Vence el ${fmtDate(f.vencimiento)}`;
+  if (f.presupuestoId) { const p = byId('presupuestos', f.presupuestoId); if (p) sub += ` · <span style="color:var(--green-ink);font-weight:700">${esc(p.numero)}</span>`; }
   const btn = cobrarBtn && S.canWrite ? `<button class="btn sm pri" data-act="cobrar" data-id="${f.id}">Cobrada</button>` : pill(e);
   return chip(f, 'factura', sub, `<b>${eur(t.total)}</b>`, btn);
 }
@@ -973,6 +976,7 @@ function openEditor(kind, id, preset){
         <label class="f full"><span>Dirección</span><input id="nc-direccion"></label>
         <label class="f"><span>C.P.</span><input id="nc-cp" inputmode="numeric"></label><label class="f"><span>Población</span><input id="nc-poblacion"></label>
       </div>
+      ${isF ? `<label class="f full"><span>Presupuesto relacionado (opcional)</span><select id="ed-pres">${presOptions(d.presupuestoId || '', d.clienteId)}</select></label>` : ''}
       <label class="f full"><span>Obra / dirección del trabajo</span><input id="ed-obra" value="${esc(d.obra)}" placeholder="Ej.: Piso C/ Mayor 5, 2ºB — salón y pasillo"></label>
       <label class="f"><span>Fecha</span><input type="date" id="ed-fecha" value="${esc(d.fecha)}"></label>
       ${isF ? `<label class="f"><span>Vencimiento</span><input type="date" id="ed-venc" value="${esc(d.vencimiento)}"></label>` : `<label class="f"><span>Validez (días)</span><input id="ed-validez" inputmode="numeric" value="${esc(d.validez)}"></label><label class="f"><span>Lugar</span><input id="ed-lugar" value="${esc(d.lugar||'')}"></label>`}
@@ -1014,6 +1018,7 @@ function collect(st){
   const va = el.querySelector('#ed-validez'); if (va) d.validez = Number(parseNum(va.value)) || 30;
   const lu = el.querySelector('#ed-lugar'); if (lu) d.lugar = lu.value.trim();
   const m = el.querySelector('#ed-motivo'); if (m) d.motivo = m.value.trim();
+  const pr = el.querySelector('#ed-pres'); if (pr) { st.prevPres = st.prevPres === undefined ? (d.presupuestoId || '') : st.prevPres; d.presupuestoId = pr.value || null; }
 }
 function cliSnap(c){ return c ? { nombre:c.nombre||'', nif:c.nif||'', direccion:c.direccion||'', cp:c.cp||'', poblacion:c.poblacion||'', tel:c.tel||'', email:c.email||'' } : null; }
 async function saveEditor(st){
@@ -1033,7 +1038,7 @@ async function saveEditor(st){
     if (isF) {
       if (!st.id) { d.estado = 'borrador'; d.serie = d.serie || 'F'; d.numero = null; d.creado = new Date().toISOString(); }
       const id = await put('facturas', st.id, d);
-      if (!st.id && d.presupuestoId && byId('presupuestos', d.presupuestoId)) await patch('presupuestos', d.presupuestoId, { estado:'facturado' });
+      setTimeout(() => { if (d.presupuestoId) syncPres(d.presupuestoId); if (st.prevPres && st.prevPres !== d.presupuestoId) syncPres(st.prevPres); }, 300);
       popSheet(); toast('Factura guardada como borrador');
       if (!st.id) openDetail('factura', id);
     } else {
@@ -1045,6 +1050,48 @@ async function saveEditor(st){
   } catch (e) { btn.disabled = false; }
 }
 
+/* ---------- relación presupuesto ↔ factura ---------- */
+function facturasDe(pid){ return S.facturas.filter(f => f.presupuestoId === pid).sort((a,b)=>(a.fecha||'').localeCompare(b.fecha||'')); }
+function avancePres(p){
+  const base = totals(p).base, fac = r2(facturasDe(p.id).reduce((a,f)=>a+totals(f).base,0));
+  return { base, fac, pend: r2(Math.max(0, base - fac)), pct: base ? Math.min(100, Math.round(fac / base * 100)) : 0 };
+}
+async function syncPres(pid){
+  const p = byId('presupuestos', pid); if (!p) return;
+  const a = avancePres(p); let estado = p.estado || 'borrador';
+  if (a.fac > 0 && a.pend <= 0.01) estado = 'facturado';
+  else if (a.fac > 0) estado = 'aceptado';
+  else if (estado === 'facturado') estado = 'aceptado';
+  if (estado !== (p.estado || 'borrador')) { try { await patch('presupuestos', pid, { estado }); } catch (e) {} }
+}
+function presOptions(sel, clienteId){
+  const ls = S.presupuestos.filter(p => p.estado !== 'rechazado' || p.id === sel).sort(sortDesc);
+  const mine = ls.filter(p => clienteId && p.clienteId === clienteId), rest = ls.filter(p => !(clienteId && p.clienteId === clienteId));
+  const opt = p => `<option value="${p.id}" ${p.id===sel?'selected':''}>${esc(p.numero)} · ${esc(cliName(p))}${p.obra?' · '+esc(p.obra.slice(0,30)):''} (${eur(totals(p).total)})</option>`;
+  return `<option value="">Ninguno</option>` + (mine.length ? `<optgroup label="De este cliente">${mine.map(opt).join('')}</optgroup>` : '') + (rest.length ? `<optgroup label="Otros">${rest.map(opt).join('')}</optgroup>` : '');
+}
+function openFacturar(p){
+  const a = avancePres(p), full = a.fac === 0;
+  const o = (act, t, sub, col) => `<button data-act="${act}" style="--sw:${col}"><span class="sw"><svg class="i" viewBox="0 0 24 24">${IC.facturas}</svg></span><span><b>${t}</b><small>${sub}</small></span></button>`;
+  pushSheet({ kind:'form', mini:true, presId: p.id, html: shHead('Facturar ' + esc(p.numero)) + `<div class="create">
+    ${o('fac-total', full ? 'Factura completa' : 'Factura por lo pendiente', (full ? 'Copia todas las partidas: ' : 'Resto sin facturar: ') + eur(a.pend) + ' + IVA', WHEEL[8])}
+    ${o('fac-50', 'Anticipo del 50 %', eur(r2(a.base * .5)) + ' + IVA, para la entrega inicial', WHEEL[1])}
+    ${o('fac-pct', 'Otro porcentaje', 'Elige qué parte del presupuesto facturas', WHEEL[5])}
+    <label class="f" style="padding:0 2px"><span>Porcentaje para “Otro porcentaje”</span><input id="fac-pct-v" inputmode="decimal" value="30"></label></div>` });
+}
+function facturaDesde(p, modo, pct){
+  const a = avancePres(p), base = { clienteId: p.clienteId, cliente: p.cliente, obra: p.obra, ivaPct: p.ivaPct, retPct: p.retPct, notas:'', presupuestoId: p.id, serie:'F' };
+  if (modo === 'total' && a.fac === 0) return { ...base, lineas: clone(p.lineas) };
+  if (modo === 'total') return { ...base, lineas: [{ concepto: 'Resto pendiente según presupuesto ' + p.numero + (p.obra ? ' (' + p.obra + ')' : ''), cantidad: 1, unidad: 'partida', precio: a.pend }] };
+  const v = r2(a.base * pct / 100);
+  return { ...base, lineas: [{ concepto: 'Anticipo del ' + fmtQty(pct) + ' % según presupuesto ' + p.numero + (p.obra ? ' (' + p.obra + ')' : ''), cantidad: 1, unidad: 'partida', precio: v }] };
+}
+function openRelacionar(f){
+  pushSheet({ kind:'form', mini:true, facId: f.id, html: shHead('Relacionar con un presupuesto') + `<div class="sb"><label class="f"><span>Presupuesto</span><select id="rel-sel">${presOptions(f.presupuestoId || '', f.clienteId)}</select></label>
+    <p class="foot-note">Es solo para tenerlos enlazados. No cambia los importes ni el número de la factura.</p></div>
+    <div class="sf"><button class="btn" data-act="close">Cancelar</button><button class="btn pri" data-act="rel-save">Guardar</button></div>` });
+}
+
 /* ---------- ficha (detalle) ---------- */
 function openDetail(k, id){ pushSheet({ kind:'detail', k, id }); }
 function renderDetailInto(s){
@@ -1054,14 +1101,22 @@ function renderDetailInto(s){
   const W = S.canWrite; let acts = '';
   if (isF) {
     if (d.estado === 'borrador') acts = `<button class="btn pri wide" data-act="emitir" ${W?'':'disabled'}>Emitir factura (asigna número)</button><button class="btn" data-act="edit-doc" ${W?'':'disabled'}>Editar</button><button class="btn" data-act="pdf">Ver PDF borrador</button><button class="btn danger wide" data-act="del-doc" ${W?'':'disabled'}>Borrar borrador</button>`;
-    else acts = `<button class="btn pri wide" data-act="send">Enviar por correo</button><button class="btn" data-act="pdf">Descargar PDF</button>${d.estado==='cobrada'?`<button class="btn" data-act="descobrar" ${W?'':'disabled'}>Marcar pendiente</button>`:`<button class="btn" data-act="cobrar" data-id="${d.id}" ${W?'':'disabled'}>Marcar cobrada</button>`}${d.serie!=='R'?`<button class="btn wide" data-act="rectificar" ${W?'':'disabled'}>Rectificar factura</button>`:''}`;
+    else acts = `<button class="btn pri wide" data-act="send">Enviar por correo</button><button class="btn" data-act="pdf">Descargar PDF</button>${d.estado==='cobrada'?`<button class="btn" data-act="descobrar" ${W?'':'disabled'}>Marcar pendiente</button>`:`<button class="btn" data-act="cobrar" data-id="${d.id}" ${W?'':'disabled'}>Marcar cobrada</button>`}${d.serie!=='R'?`<button class="btn wide" data-act="rectificar" ${W?'':'disabled'}>Rectificar factura</button>`:''}<button class="btn wide" data-act="relacionar" ${W?'':'disabled'}>${d.presupuestoId ? 'Cambiar presupuesto relacionado' : 'Relacionar con un presupuesto'}</button>`;
   } else {
     acts = `<button class="btn pri wide" data-act="send">Enviar por correo</button><button class="btn" data-act="pdf">Descargar PDF</button><button class="btn" data-act="edit-doc" ${W?'':'disabled'}>Editar</button>
       ${e!=='aceptado'&&e!=='facturado'?`<button class="btn" data-act="pres-estado" data-v="aceptado" ${W?'':'disabled'}>Aceptado</button>`:''}${e!=='rechazado'&&e!=='facturado'?`<button class="btn" data-act="pres-estado" data-v="rechazado" ${W?'':'disabled'}>Rechazado</button>`:''}
-      ${e!=='facturado'?`<button class="btn wide" data-act="to-factura" ${W?'':'disabled'}>Convertir en factura</button>`:''}
+      ${avancePres(d).pend > 0.01 && e!=='rechazado'?`<button class="btn wide" data-act="to-factura" ${W?'':'disabled'}>${avancePres(d).fac ? 'Facturar lo pendiente o un anticipo' : 'Convertir en factura'}</button>`:''}
       <button class="btn" data-act="dup" ${W?'':'disabled'}>Duplicar</button><button class="btn danger" data-act="del-doc" ${W?'':'disabled'}>Borrar</button>`;
   }
   const ttl = isF ? (d.serie==='R'?'Factura rectificativa':'Factura') : 'Presupuesto';
+  let rel = '';
+  if (isF && d.presupuestoId) { const p = byId('presupuestos', d.presupuestoId);
+    rel = p ? `<div class="section"><div class="sechead"><h2>Presupuesto</h2></div><div class="list">${presItem(p)}</div></div>` : ''; }
+  if (!isF) { const fs = facturasDe(d.id), a = avancePres(d);
+    rel = `<div class="section"><div class="sechead"><h2>Facturas</h2><b class="num">${a.pct} %</b></div>
+      <div class="taxbar" style="margin:0 0 6px"><i style="width:${a.pct}%;background:var(--green)"></i></div>
+      <p class="muted" style="margin:0 0 10px;font-size:14px">Facturado ${eur(a.fac)} de ${eur(a.base)} (sin IVA).${a.pend > 0.01 ? ' Pendiente: ' + eur(a.pend) + '.' : ' Todo facturado.'}</p>
+      ${fs.length ? `<div class="list">${fs.map(f => facItem(f, false)).join('')}</div>` : `<p class="foot-note" style="margin:0">Aún no hay facturas de este presupuesto. Puedes convertirlo en factura o relacionar una factura existente desde la propia factura.</p>`}</div>`; }
   s.el.innerHTML = shHead(ttl) + `<div class="sb">
     <div class="dochero" style="--sw:${swatch(c.nombre||cliName(d))}"><div class="row"><span class="no">${esc(d.numero || 'Borrador')}</span><span class="spacer"></span>${pill(e)}</div>
       <div class="who">${esc(c.nombre||'—')}</div>${d.obra?`<div style="font-weight:600">${esc(d.obra)}</div>`:''}
@@ -1069,10 +1124,11 @@ function renderDetailInto(s){
       <div style="font-weight:600;font-size:14px;opacity:.8">${fmtDate(d.fecha)}${isF&&d.vencimiento?', vence el '+fmtDate(d.vencimiento):''}${!isF?', válido '+(d.validez||30)+' días':''}</div></div>
     ${c.nif||c.email||c.tel||d.refFactura?`<div class="card" style="margin-bottom:12px"><div class="kv">${c.nif?`<dt>NIF</dt><dd>${esc(c.nif)}</dd>`:''}${c.email?`<dt>Email</dt><dd>${esc(c.email)}</dd>`:''}${c.tel?`<dt>Teléfono</dt><dd>${esc(c.tel)}</dd>`:''}${d.refFactura?`<dt>Rectifica</dt><dd>${esc(d.refFactura.numero)} (${fmtDate(d.refFactura.fecha)})${d.motivo?'. '+esc(d.motivo):''}</dd>`:''}</div></div>`:''}
     <div class="tw"><table class="t"><thead><tr><th>Concepto</th><th class="r">Cant.</th><th class="r">Precio</th><th class="r">Importe</th></tr></thead><tbody>
-      ${(d.lineas||[]).map(l=>`<tr><td>${esc(l.concepto)}</td><td class="r">${fmtQty(parseNum(l.cantidad))} ${esc(l.unidad)}</td><td class="r">${eur(parseNum(l.precio))}</td><td class="r">${eur(lineImporte(l))}</td></tr>`).join('')}</tbody></table></div>
+      ${(d.lineas||[]).map(l=>`<tr><td style="white-space:pre-line">${esc(l.concepto)}</td><td class="r">${fmtQty(parseNum(l.cantidad))} ${esc(l.unidad)}</td><td class="r">${eur(parseNum(l.precio))}</td><td class="r">${eur(lineImporte(l))}</td></tr>`).join('')}</tbody></table></div>
     <div class="tot" style="margin-top:12px">${totHtml(d)}</div>
     ${d.notas?`<p class="foot-note">${esc(d.notas)}</p>`:''}
     <div class="actions">${acts}</div>
+    ${rel ? '<div style="margin-top:18px">' + rel + '</div>' : ''}
     ${d.enviado?`<p class="foot-note">Enviado por correo a ${esc(d.enviado.a)} el ${fmtDate(d.enviado.fecha)}.</p>`:''}
     ${isF&&d.estado==='cobrada'&&d.fechaCobro?`<p class="foot-note">Cobrada el ${fmtDate(d.fechaCobro)}.</p>`:''}
     ${isF&&d.huella?`<p class="foot-note">Huella del registro (encadenada con la factura anterior):<br><span class="hash">${esc(d.huella)}</span></p>`:''}
@@ -1101,7 +1157,8 @@ async function emitir(f){
 function pdfFor(k, d){
   if (!window.jspdf || !window.jspdf.jsPDF) throw new Error('nopdf');
   const e = d.emisor ? { ...emp(), ...d.emisor } : emp();
-  return buildPdf(window.jspdf.jsPDF, k, d, e, LOGO, e.firmar !== false ? FIRMA : null);
+  const pr = k === 'factura' && d.presupuestoId ? byId('presupuestos', d.presupuestoId) : null;
+  return buildPdf(window.jspdf.jsPDF, k, pr ? { ...d, presupuestoRef: pr.numero } : d, e, LOGO, e.firmar !== false ? FIRMA : null);
 }
 const pdfName = (k, d) => (k==='presupuesto'?'Presupuesto ':(d.serie==='R'?'Factura rectificativa ':'Factura ')) + (d.numero||'borrador') + ' - ' + (d.cliente?.nombre||'cliente').replace(/[\\/:*?"<>|]/g,'') + '.pdf';
 async function savePdf(k, d){
@@ -1247,15 +1304,24 @@ document.addEventListener('click', async ev => {
     case 'save-ed': saveEditor(st); break;
     case 'edit-doc': if (doc) openEditor(det.k, doc.id); break;
     case 'del-doc':
-      if (doc && await ask(det.k==='factura'?'¿Borrar el borrador?':'¿Borrar el presupuesto?', 'No se puede deshacer.', 'Borrar', true)) { await del(det.k==='factura'?'facturas':'presupuestos', doc.id).then(()=>{ popSheet(); toast('Borrado'); }).catch(()=>{}); }
+      if (doc && await ask(det.k==='factura'?'¿Borrar el borrador?':'¿Borrar el presupuesto?', 'No se puede deshacer.', 'Borrar', true)) { const pid = det.k==='factura' ? doc.presupuestoId : null; await del(det.k==='factura'?'facturas':'presupuestos', doc.id).then(()=>{ popSheet(); toast('Borrado'); if (pid) setTimeout(() => syncPres(pid), 300); }).catch(()=>{}); }
       break;
     case 'dup': if (doc) { const p = clone(doc); ['id','numero','estado','enviado','creado'].forEach(k=>delete p[k]); p.fecha = todayISO(); popSheet(); openEditor('presupuesto', null, p); } break;
     case 'pres-estado': if (doc) patch('presupuestos', doc.id, { estado: b.dataset.v }).then(()=> b.dataset.v === 'aceptado' ? celebrate('¡Presupuesto aceptado!') : toast('Marcado como rechazado')).catch(()=>{}); break;
-    case 'to-factura': if (doc) { const p = { clienteId: doc.clienteId, cliente: doc.cliente, obra: doc.obra, lineas: clone(doc.lineas), ivaPct: doc.ivaPct, retPct: doc.retPct, notas:'', presupuestoId: doc.id, serie:'F' }; popSheet(); openEditor('factura', null, p); } break;
+    case 'to-factura': if (doc) openFacturar(doc); break;
+    case 'fac-total': case 'fac-50': case 'fac-pct': {
+      const p = byId('presupuestos', st.presId); if (!p) break;
+      let pct = a === 'fac-50' ? 50 : parseNum(st.el.querySelector('#fac-pct-v').value);
+      if (a === 'fac-pct' && !(pct > 0 && pct <= 100)) { toast('Escribe un porcentaje entre 1 y 100.', true); break; }
+      const pre = facturaDesde(p, a === 'fac-total' ? 'total' : 'pct', pct);
+      closeAll(); openEditor('factura', null, pre); break; }
+    case 'relacionar': if (doc) openRelacionar(doc); break;
+    case 'rel-save': { const f = byId('facturas', st.facId); if (!f) break; const nv = st.el.querySelector('#rel-sel').value || null, old = f.presupuestoId || null;
+      patch('facturas', f.id, { presupuestoId: nv }).then(() => { popSheet(); toast(nv ? 'Factura relacionada' : 'Relación quitada'); setTimeout(() => { if (nv) syncPres(nv); if (old && old !== nv) syncPres(old); }, 300); }).catch(()=>{}); break; }
     case 'emitir': if (doc) emitir(doc).catch(()=>{}); break;
     case 'cobrar': { const id = b.dataset.id || (doc && doc.id); const fx = byId('facturas', id); if (id) patch('facturas', id, { estado:'cobrada', fechaCobro: todayISO() }).then(()=>celebrate('¡Cobrada! +' + eur(fx ? totals(fx).total : 0))).catch(()=>{}); break; }
     case 'descobrar': if (doc) patch('facturas', doc.id, { estado:'pendiente', fechaCobro: null }).catch(()=>{}); break;
-    case 'rectificar': if (doc) { const p = { clienteId: doc.clienteId, cliente: doc.cliente, obra: doc.obra, lineas: doc.lineas.map(l=>({ ...l, cantidad: -parseNum(l.cantidad) })), ivaPct: doc.ivaPct, retPct: doc.retPct, notas:'', serie:'R', refFactura:{ id: doc.id, numero: doc.numero, fecha: doc.fecha }, motivo:'' }; popSheet(); openEditor('factura', null, p); } break;
+    case 'rectificar': if (doc) { const p = { clienteId: doc.clienteId, cliente: doc.cliente, obra: doc.obra, lineas: doc.lineas.map(l=>({ ...l, cantidad: -parseNum(l.cantidad) })), ivaPct: doc.ivaPct, retPct: doc.retPct, notas:'', serie:'R', presupuestoId: doc.presupuestoId || null, refFactura:{ id: doc.id, numero: doc.numero, fecha: doc.fecha }, motivo:'' }; popSheet(); openEditor('factura', null, p); } break;
     case 'pdf': if (doc) savePdf(det.k, doc); break;
     case 'send': if (doc) openSend(det.k, doc); break;
     case 'pdf-send': { const d = byId(st.col, st.docId); if (d) savePdf(st.k, d); break; }
