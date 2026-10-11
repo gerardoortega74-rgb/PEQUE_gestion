@@ -1,0 +1,14 @@
+rules_version = '2';
+// Solo los usuarios de esta lista pueden leer y escribir datos.
+// UID de Oscar (sanmartinortizoscar@gmail.com) y de Gerardo (gerardoortega74@gmail.com),
+// tomados de Firebase → Authentication → Usuarios.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function permitido() {
+      return request.auth != null && request.auth.uid in ['CfCME0q9EpVMPPlc23nQx9w7kj83', 'keA8h1c6xAdPUGg2oKiXjuohrvq1'];
+    }
+    match /{document=**} {
+      allow read, write: if permitido();
+    }
+  }
+}
