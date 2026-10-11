@@ -260,6 +260,43 @@ table.t tr.res td{font-weight:800;border-bottom:0;font-family:var(--f-display);f
 #splash{position:fixed;left:0;top:0;width:100vw;height:100vh;pointer-events:none;z-index:70}
 body.locked nav.bot,body.locked header.top .yearsel,body.locked header.top .iconbtn{display:none}
 @media(min-width:980px){body.locked{padding-left:0}}
+/* ---- intro animada (rodillo) ---- */
+#ix{position:fixed;inset:0;z-index:200;background:var(--paper);overflow:hidden;cursor:pointer;display:flex;justify-content:center}
+#ix.ix-out{animation:ix-outro .75s cubic-bezier(.7,0,.25,1) both}
+@keyframes ix-outro{to{transform:translateY(-104%)}}
+#ix canvas{position:absolute;inset:0;width:100%;height:100%}
+.ix-box{position:relative;width:min(100%,420px);height:100%}
+.ix-words{position:absolute;font:800 clamp(25px,8vw,34px)/1.02 var(--f-body);color:#fff;letter-spacing:-.01em;text-shadow:0 1px 1px rgba(40,50,10,.25);clip-path:inset(0 0 0 100%)}
+.ix-words span{display:block}
+.ix-roller{position:absolute;left:0;width:92px;height:124px;opacity:0;will-change:transform}
+.ix-roller .ix-nap{animation:ix-nap .18s linear infinite paused}
+.ix-rolling .ix-roller .ix-nap{animation-play-state:running}
+@keyframes ix-nap{to{transform:translateY(12px)}}
+.ix-mark{position:absolute;left:7%;right:5%}
+.ix-wheel{position:absolute;right:0;top:0;width:205px;height:205px;filter:drop-shadow(0 6px 10px rgba(0,0,0,.18));transform:rotate(-80deg) scale(.9);opacity:0}
+.ix-go .ix-wheel{animation:ix-spin 2.4s cubic-bezier(.15,.75,.2,1) 1.55s both}
+@keyframes ix-spin{from{transform:rotate(-80deg) scale(.9);opacity:1}to{transform:rotate(0) scale(1);opacity:1}}
+.ix-wheel path{transform-origin:0 0;transform:scale(0);opacity:0}
+.ix-go .ix-wheel path{animation:ix-dab .55s cubic-bezier(.3,1.6,.45,1) both}
+@keyframes ix-dab{60%{opacity:1}to{transform:scale(1);opacity:1}}
+.ix-name{position:absolute;left:0;top:42px;font:700 14px var(--f-body);color:var(--ink);opacity:0}
+.ix-peque{position:absolute;left:-3%;top:64px;font:800 clamp(64px,20vw,90px)/1 var(--f-display);letter-spacing:.02em;color:var(--ix-peque,#6E706C);opacity:0;
+  transform:skewX(-14deg);text-shadow:1px 1px 0 var(--ix-sh,#2A2C27),2px 2px 0 var(--ix-sh,#2A2C27),3px 3px 0 var(--ix-sh,#2A2C27),4px 4px 0 var(--ix-sh,#2A2C27),5px 5px 0 var(--ix-sh,#2A2C27),8px 10px 14px rgba(0,0,0,.25)}
+.ix-place{position:absolute;left:0;right:0;top:226px;text-align:center;font:600 15px/1.4 var(--f-body);color:var(--ink);opacity:0}
+.ix-tag{position:absolute;left:0;right:0;text-align:center;font:600 15px var(--f-body);color:var(--muted);opacity:0}
+.ix-go .ix-name{animation:ix-fade .5s ease 2.55s both}
+.ix-go .ix-peque{animation:ix-slam .5s cubic-bezier(.2,1.5,.4,1) 2.35s both}
+.ix-go .ix-place{animation:ix-fade .5s ease 2.85s both}
+.ix-go .ix-tag{animation:ix-fade .6s ease 3.2s both}
+@keyframes ix-fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+@keyframes ix-slam{from{opacity:0;transform:translateX(-80px) skewX(-14deg) scale(1.15)}to{opacity:1;transform:translateX(0) skewX(-14deg) scale(1)}}
+.ix-shake{animation:ix-shake .35s ease 2.62s both}
+@keyframes ix-shake{20%{transform:translate(2px,-1px)}40%{transform:translate(-2px,1px)}60%{transform:translate(1px,1px)}80%{transform:translate(-1px,0)}}
+.ix-skip{position:fixed;right:16px;bottom:calc(16px + env(safe-area-inset-bottom,0px));border:0;border-radius:999px;padding:10px 16px;min-height:40px;font:700 14px var(--f-body);background:rgba(0,0,0,.07);color:var(--muted);cursor:pointer;z-index:2}
+:root{--ix-peque:#6E706C;--ix-sh:#2A2C27;--wall-a:#E9EBE2;--wall-b:#F9FAF5}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--ix-peque:#C9CBC4;--ix-sh:#000;--wall-a:#191B14;--wall-b:#20231A}}
+:root[data-theme="dark"]{--ix-peque:#C9CBC4;--ix-sh:#000;--wall-a:#191B14;--wall-b:#20231A}
+
 @media (prefers-reduced-motion: reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
 </style>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true"><filter id="rough" x="-5%" y="-20%" width="110%" height="140%"><feTurbulence type="fractalNoise" baseFrequency="0.035 0.55" numOctaves="2" seed="7" result="n"/><feDisplacementMap in="SourceGraphic" in2="n" scale="12" xChannelSelector="R" yChannelSelector="G"/></filter></svg>
@@ -624,7 +661,7 @@ function render(){
   renderNav(); renderYears();
   if (S.view === 'ajustes' && S.ajDirty && document.getElementById('ajustes')) { S.stack.forEach(s => { if (s.kind === 'detail' && s.el) renderDetailInto(s); }); return; }
   const v = S.view; let h = '';
-  const animate = S.ready && v === 'inicio' && !S.animDone;
+  const animate = S.ready && v === 'inicio' && !S.animDone && !S.introOn;
   S.animNow = animate;
   document.body.classList.toggle('locked', S.authState !== 'in');
   if (S.authState === 'out') h = loginHtml();
@@ -1248,6 +1285,91 @@ document.addEventListener('pointerdown', ev => { S.lastXY = [ev.clientX, ev.clie
 document.addEventListener('change', ev => { if (ev.target.id === 'restoreFile' && ev.target.files[0]) { restoreBackup(ev.target.files[0]); ev.target.value = ''; } });
 document.addEventListener('keydown', ev => { if (ev.key === 'Escape' && S.stack.length && !document.querySelector('.dlg')) popSheet(); });
 $('#yearSel').addEventListener('change', ev => { S.year = Number(ev.target.value); S.q = S.year === now.getFullYear() ? quarterOf(todayISO()) : 4; render(); });
+
+/* ---------- intro animada ---------- */
+function playIntro(onEnd){
+  const reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (reduce) { onEnd && onEnd(); return; }
+  const GREEN = [169,189,87];
+  const ROLLER = `<svg class="ix-roller" viewBox="0 0 92 124" aria-hidden="true"><defs>
+  <linearGradient id="ix-cyl" x1="0" x2="1"><stop offset="0" stop-color="#7E9334"/><stop offset=".35" stop-color="#B6CA63"/><stop offset=".6" stop-color="#9BB044"/><stop offset="1" stop-color="#6E8228"/></linearGradient>
+  <clipPath id="ix-cc"><rect x="62" y="4" width="26" height="116" rx="10"/></clipPath>
+  <linearGradient id="ix-hdl" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4A70D6"/><stop offset="1" stop-color="#1F3D8F"/></linearGradient></defs>
+  <rect x="2" y="68" width="37" height="14" rx="7" fill="url(#ix-hdl)"/><rect x="8" y="71" width="6" height="7" rx="2" fill="#9DB3F0"/>
+  <path d="M37 75h8L55 32V10h20" fill="none" stroke="#B9BDB5" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M37 75h8L55 32V10h20" fill="none" stroke="#fff" stroke-opacity=".45" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="62" y="4" width="26" height="116" rx="10" fill="url(#ix-cyl)"/>
+  <g clip-path="url(#ix-cc)"><g class="ix-nap" stroke="rgba(40,50,10,.18)" stroke-width="2">${Array.from({length:12},(_,i)=>`<path d="M62 ${-8+i*12}h26"/>`).join('')}</g></g>
+  <rect x="62" y="4" width="26" height="116" rx="10" fill="none" stroke="rgba(0,0,0,.15)"/></svg>`;
+  const n = WHEEL.length, g = .028, rings = [[66,98,0],[46,65,.3],[28,45,.56]]; let wp = '';
+  for (let i = 0; i < n; i++) { const a0 = i/n*2*Math.PI + g/2, a1 = (i+1)/n*2*Math.PI - g/2;
+    rings.forEach(([r0,r1,k], j) => { wp += `<path d="${arcPath(r0,r1,a0,a1)}" fill="${tint(WHEEL[i],k)}" style="animation-delay:${(1.6 + i*.085 + j*.06).toFixed(3)}s"/>`; }); }
+  const wheel = `<svg class="ix-wheel" viewBox="-100 -100 200 200" aria-hidden="true"><defs><radialGradient id="ix-gl" cx="-.3" cy="-.4" r="1.1"><stop offset="0" stop-color="#fff" stop-opacity=".35"/><stop offset=".5" stop-color="#fff" stop-opacity="0"/></radialGradient></defs>${wp}<circle r="98" fill="url(#ix-gl)"/></svg>`;
+  const e = emp();
+  const ix = document.createElement('div'); ix.id = 'ix'; ix.setAttribute('role','img'); ix.setAttribute('aria-label','PEQUE pintura y decoración');
+  ix.innerHTML = `<canvas></canvas><canvas></canvas><div class="ix-box"><div class="ix-words">pintura y<span>decoración</span></div>${ROLLER}
+    <div class="ix-mark">${wheel}<div class="ix-name">${esc(e.titular || 'Oscar San Martín Ortiz')}</div><div class="ix-peque">PEQUE</div><div class="ix-place">Sierrapando - Torrelavega<br>Tel. ${esc(e.tel || '625 444 370')}</div></div>
+    <div class="ix-tag">Presupuestos, facturas y cuentas</div></div><button class="ix-skip" type="button">Saltar</button>`;
+  document.body.append(ix);
+  const [wall, paint] = ix.querySelectorAll('canvas'), box = ix.querySelector('.ix-box');
+  const roller = ix.querySelector('.ix-roller'), words = ix.querySelector('.ix-words'), mark = ix.querySelector('.ix-mark');
+  const VW = innerWidth, VH = innerHeight, W = box.clientWidth, H = box.clientHeight, off = (VW - W) / 2, dpr = Math.min(2, devicePixelRatio || 1);
+  const top = Math.round(Math.max(60, Math.min(H * 0.17, (H - 520) / 2 + 20))), bandH = 112, xL = 76, xR = W - 6;
+  const markTop = top + bandH + 18;
+  mark.style.top = markTop + 'px'; mark.style.height = '270px';
+  ix.querySelector('.ix-tag').style.top = (markTop + 286) + 'px';
+  words.style.left = (xL + 26) + 'px'; words.style.top = (top + bandH / 2 - 34) + 'px';
+  roller.style.top = (top - 6) + 'px';
+  const cssv = k => getComputedStyle(document.documentElement).getPropertyValue(k).trim();
+  const rnd = seed => { let s = seed; return () => (s = (s * 16807) % 2147483647) / 2147483647; };
+  const wc = wall.getContext('2d'); if (!wc) { ix.remove(); onEnd && onEnd(); return; }
+  wall.width = VW * dpr; wall.height = VH * dpr; wc.scale(dpr, dpr);
+  wc.fillStyle = cssv('--paper'); wc.fillRect(0, 0, VW, VH);
+  const R = rnd(7), ca = cssv('--wall-a'), cb = cssv('--wall-b');
+  for (let i = 0; i < VW * VH / 9; i++) { wc.fillStyle = R() < .5 ? ca : cb; wc.globalAlpha = .5 + R() * .5; wc.beginPath(); wc.arc(R() * VW, R() * VH, .6 + R() * 1.6, 0, 7); wc.fill(); }
+  wc.globalAlpha = 1;
+  const pc = paint.getContext('2d'); paint.width = VW * dpr; paint.height = VH * dpr; pc.scale(dpr, dpr); pc.translate(off, 0);
+  const R2 = rnd(11);
+  const edge = (x, ph, amp) => Math.sin(x * .09 + ph) * amp * .5 + Math.sin(x * .023 + ph * 2) * amp + Math.sin(x * .31 + ph) * amp * .35;
+  const topE = x => top + 4 + edge(x, 1.3, 3.2), botE = x => top + bandH - 4 + edge(x, 4.1, 3.6);
+  function paintCol(x){
+    const t = topE(x) - (R2() < .04 ? R2() * 4 : 0), b = botE(x) + (R2() < .05 ? R2() * 5 : 0);
+    const shade = 0.97 + Math.sin(x * .05) * .025 + Math.sin(x * .17 + 1) * .015 + R2() * .03;
+    pc.fillStyle = `rgb(${GREEN.map(v => Math.min(255, Math.round(v * shade))).join(',')})`; pc.fillRect(x, t, 1.6, b - t);
+    for (let k = 0; k < 4; k++) { const y = t + R2() * (b - t); pc.fillStyle = R2() < .5 ? 'rgba(255,255,255,.16)' : 'rgba(60,75,15,.12)'; pc.fillRect(x + R2(), y, 1 + R2(), 1 + R2() * 2); }
+    pc.fillStyle = 'rgba(255,255,255,.05)'; pc.fillRect(x, t + 5, 1.6, (b - t) * .3);
+  }
+  const drips = [0.22, 0.58, 0.86].map((f, i) => ({ x: xL + (xR - xL) * f + (R2() - .5) * 20, len: 8 + R2() * 18, w: 3 + R2() * 2.5, d: i * .22 }));
+  function drawDrip(dp, p){
+    const x = dp.x, y0 = botE(x) - 3, L = dp.len * p;
+    pc.fillStyle = `rgb(${GREEN.map(v => Math.round(v * .93)).join(',')})`;
+    pc.beginPath(); pc.moveTo(x - dp.w / 2, y0); pc.lineTo(x - dp.w / 2 + .6, y0 + L); pc.arc(x, y0 + L, dp.w / 2 + .6, Math.PI, 0, true); pc.lineTo(x + dp.w / 2, y0); pc.fill();
+    pc.fillStyle = 'rgba(255,255,255,.35)'; pc.beginPath(); pc.arc(x - dp.w * .2, y0 + L - 1, dp.w * .22, 0, 7); pc.fill();
+  }
+  const T0 = performance.now(), PS = .35, PD = 1.5; let edgeX = xR + 1, raf;
+  const ease = t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+  function frame(now){
+    const t = (now - T0) / 1000, p = Math.max(0, Math.min(1, (t - PS) / PD)), ee = ease(p);
+    const rx = (xR - 70) - (xR - xL) * ee + 2, cyl = rx + 62;
+    roller.style.opacity = t < .15 ? 0 : Math.min(1, (t - .15) / .25);
+    roller.style.transform = `translate(${rx}px, ${Math.sin(t * 22) * (p > 0 && p < 1 ? 1.2 : 0)}px)`;
+    ix.classList.toggle('ix-rolling', p > 0 && p < 1);
+    const st = Math.ceil(Math.max(xL, cyl + 13));
+    for (let x = edgeX - 1; x >= st; x--) paintCol(x);
+    edgeX = Math.min(edgeX, st);
+    words.style.clipPath = `inset(0 0 0 ${Math.max(0, st - (xL + 26))}px)`;
+    drips.forEach(dp => { const q = Math.max(0, Math.min(1, (t - PS - PD - dp.d + .2) / 1.1)); if (q > 0) drawDrip(dp, 1 - Math.pow(1 - q, 2.4)); });
+    if (t < 4.2 && ix.isConnected) raf = requestAnimationFrame(frame);
+  }
+  raf = requestAnimationFrame(frame); ix.classList.add('ix-go'); mark.classList.add('ix-shake');
+  let done = false;
+  const finish = () => { if (done) return; done = true; cancelAnimationFrame(raf); ix.classList.add('ix-out'); setTimeout(() => ix.remove(), 760); onEnd && onEnd(); };
+  const tm = setTimeout(finish, 4700);
+  ix.addEventListener('click', () => { clearTimeout(tm); finish(); });
+}
+
+S.introOn = true;
+playIntro(() => { S.introOn = false; if (S.view === 'inicio' && S.ready && !S.animDone) render(); });
 
 /* ---------- datos en la nube (Firebase) ---------- */
 const LS_BACKUP = 'peque-gestion-ultima-copia';
