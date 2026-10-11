@@ -305,6 +305,7 @@ body.locked nav.bot,body.locked header.top .yearsel,body.locked header.top .icon
     <div class="brand"><img src="logo.jpg" alt="PEQUE pintura y decoración"><b>PEQUE</b></div>
     <select class="yearsel" id="yearSel" aria-label="Ejercicio"></select>
     <button class="iconbtn" data-act="go" data-v="mas" aria-label="Clientes, impuestos y ajustes"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
+    <button class="iconbtn" data-act="logout" aria-label="Salir (cerrar sesión)" title="Salir"><svg class="i" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/></svg></button>
   </header>
   <main id="view"></main>
 </div>
@@ -793,7 +794,8 @@ function vMas(){
   return `<h1 class="view">Más</h1><div class="list">
   ${it('clientes','Clientes', S.clientes.length + (S.clientes.length===1?' cliente guardado':' clientes guardados'), WHEEL[5], '<circle cx="9" cy="8" r="4"/><path d="M2 21c0-4 3-6 7-6s7 2 7 6M17 11a3 3 0 1 0 0-6M22 21c0-3-2-5-5-5"/>')}
   ${it('impuestos','Impuestos y libros','IVA trimestral (303), IRPF (130) y libros en CSV', WHEEL[1], '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>')}
-  ${it('ajustes','Datos de la empresa y sesión','NIF, dirección, IBAN, objetivo anual, copias y cerrar sesión', WHEEL[8], '<path d="M4 21V8l8-5 8 5v13"/><path d="M9 21v-6h6v6"/>')}</div>`;
+  ${it('ajustes','Datos de la empresa y sesión','NIF, dirección, IBAN, objetivo anual, copias y cerrar sesión', WHEEL[8], '<path d="M4 21V8l8-5 8 5v13"/><path d="M9 21v-6h6v6"/>')}
+  <button class="chipcard" data-act="logout" style="--sw:var(--idle-bg)"><span class="sw" style="justify-content:center;align-items:center"><svg class="i" viewBox="0 0 24 24" style="width:26px;height:26px;stroke:var(--ink)"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/></svg></span><span class="main"><span class="t">Salir</span><span class="s">Cerrar sesión en este dispositivo</span></span></button></div>`;
 }
 function vClientes(){
   const q = S.buscar.trim().toLowerCase();
