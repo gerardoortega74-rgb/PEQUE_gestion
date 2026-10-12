@@ -516,7 +516,8 @@ function buildPdf(JsPDF, kind, d, emp, logo, firma) {
       doc.autoTable({ startY: y3, margin: { left: M, right: M, bottom: 20 }, theme: 'grid', rowPageBreak: 'avoid',
         body: conds.map((c, i) => [(i + 1) + '. ' + (c[0] || 'Condición'), c[1]]),
         styles: { font: 'helvetica', fontSize: 9.5, cellPadding: 3.2, textColor: INK, lineColor: LINE, lineWidth: 0.2, valign: 'top' },
-        columnStyles: { 0: { cellWidth: 48, fontStyle: 'bold', fillColor: LABEL_BG } } });
+        columnStyles: { 0: { cellWidth: 48, fontStyle: 'bold', fillColor: LABEL_BG } },
+        didParseCell: h => { if (h.section === 'body' && /pago/i.test(conds[h.row.index][0] || '')) { h.cell.styles.fillColor = [255, 245, 0]; h.cell.styles.fontStyle = 'bold'; h.cell.styles.textColor = [20, 20, 20]; } } });
       y3 = doc.lastAutoTable.finalY + 12;
     }
     if (y3 + 80 > 276) { doc.addPage(); header(); y3 = 58; }
