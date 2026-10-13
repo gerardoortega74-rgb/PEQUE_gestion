@@ -539,12 +539,16 @@ function buildPdf(JsPDF, kind, d, emp, logo, firma) {
       didDrawCell: h => { if (firma && h.section === 'body' && h.row.index === 0 && h.column.index === 0) { try { doc.addImage(firma, 'PNG', h.cell.x + 8, h.cell.y + 2, 44, 28.5); } catch (e) { } } }
     });
   } else {
-    const pago = emp.iban && t.total > 0 ? 'Forma de pago: transferencia bancaria a la cuenta ' + emp.iban + (d.vencimiento ? ' antes del ' + fmtDate(d.vencimiento) : '') + '. Indique el número de factura en el concepto.' : '';
-    if (pago) {
-      const pl = doc.splitTextToSize(pago, W - 2 * M - 10);
-      if (ty + pl.length * 4.4 + 8 > 276) { doc.addPage(); header(); ty = 56; }
-      doc.setFillColor(...LABEL_BG); doc.rect(M, ty - 4.5, W - 2 * M, pl.length * 4.4 + 6, 'F');
-      doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.setTextColor(...INK); doc.text(pl, M + 5, ty); ty += pl.length * 4.4 + 8;
+    if (emp.iban && t.total > 0) {
+      const l3 = (d.vencimiento ? 'Antes del ' + fmtDate(d.vencimiento) + '. ' : '') + 'Indique el número de factura en el concepto.';
+      const boxH = 21;
+      if (ty + boxH > 276) { doc.addPage(); header(); ty = 56; }
+      doc.setFillColor(...LABEL_BG); doc.rect(M, ty - 4.5, W - 2 * M, boxH, 'F');
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.setTextColor(...INK);
+      doc.text('Forma de pago: transferencia bancaria a la cuenta', M + 5, ty);
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.text(String(emp.iban), M + 5, ty + 6.2);
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.text(l3, M + 5, ty + 12);
+      ty += boxH + 4;
     }
   }
   const n = doc.getNumberOfPages();
