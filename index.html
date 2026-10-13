@@ -1726,7 +1726,7 @@ S.introOn = true;
 playIntro(() => { S.introOn = false; if (S.view === 'inicio' && S.ready && !S.animDone) render(); });
 
 /* ---------- avisos de actualización ---------- */
-const APP_VERSION = '2026.10.13-2209';
+const APP_VERSION = '2026.10.13-2210';
 const UPD = { remote: null, notas: '', asked: '' };
 async function checkUpdate(manual){
   if (!/^https?:/.test(location.protocol)) return 'err';
