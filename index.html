@@ -261,6 +261,16 @@ table.t tr.res td{font-weight:800;border-bottom:0;font-family:var(--f-display);f
 #splash{position:fixed;left:0;top:0;width:100vw;height:100vh;pointer-events:none;z-index:70}
 body.locked nav.bot,body.locked header.top .yearsel,body.locked header.top .iconbtn{display:none}
 @media(min-width:980px){body.locked{padding-left:0}}
+.tk{display:grid;gap:8px}.tk-l{font-size:14px;font-weight:700;color:var(--muted)}
+.tk-row{position:relative}.tk-row label.btn{width:100%;border-style:dashed;cursor:pointer}
+.tk-prev{display:flex;gap:12px;align-items:center;background:var(--card);border-radius:var(--r);padding:10px;box-shadow:var(--lift)}
+.tk-prev img{width:96px;height:96px;object-fit:cover;border-radius:10px;background:#fff}
+.tk-pdf{width:96px;height:96px;border-radius:10px;background:var(--bad-bg);color:var(--bad);display:grid;place-items:center;text-align:center;font-weight:800;font-size:18px;line-height:1.1;overflow:hidden}
+.tk-pdf small{font-size:10px;font-weight:600;word-break:break-all;padding:0 4px}
+.tk-act{display:flex;flex-direction:column;gap:8px}
+.tk-ov{position:fixed;inset:0;z-index:90;background:rgba(10,12,6,.92);display:grid;place-items:center;padding:16px}
+.tk-ov img{max-width:100%;max-height:100%;border-radius:8px;background:#fff}
+.tk-ov .x{position:absolute;top:calc(14px + env(safe-area-inset-top,0px));right:14px;background:#fff;color:#111}
 .cp-sug{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:-4px}
 .cp-sug .cp-t{font-size:13px;font-weight:700;color:var(--muted);width:100%}
 .cp-sug .chip{border-style:solid;background:var(--soft)}
@@ -873,7 +883,7 @@ function vGastos(){
   <div class="list cols">${ls.map(g=>{ const col = WHEEL[Math.max(0,CATS.indexOf(g.categoria)) % WHEEL.length];
     return `<button class="chipcard" data-act="edit-gasto" data-id="${g.id}" style="--sw:${g.deducible===false?'var(--idle-bg)':col}"><span class="sw"><b>${esc(initials(g.proveedor||g.categoria))}</b><small>${fmtDate(g.fecha).slice(0,5)}</small></span>
     <span class="main"><span class="t">${esc(g.proveedor||g.concepto||'Gasto')}</span><span class="s">${esc(g.concepto && g.proveedor ? g.concepto : g.categoria||'')}</span></span>
-    <span class="amt"><b>${eur(g.total)}</b><span class="docno">${g.deducible===false?'No deducible':'IVA ' + fmtQty(g.ivaPct) + ' %'}</span></span></button>`; }).join('')}</div>`
+    <span class="amt"><b>${eur(g.total)}</b><span class="docno">${g.deducible===false?'No deducible':'IVA ' + fmtQty(g.ivaPct) + ' %'}${g.ticket?' · con foto':''}</span></span></button>`; }).join('')}</div>`
   : `<div class="empty"><span class="dot"></span><b>Sin gastos en este periodo</b>Apunta cada ticket de pintura, gasolina o herramienta para restarlo del IVA y del IRPF.</div>`}`;
 }
 function vMas(){
@@ -1310,6 +1320,10 @@ function openGasto(id){
     <label class="f full"><span>Concepto</span><input id="g-conc" value="${esc(g.concepto)}" placeholder="Ej.: 4 botes plástica blanca 15 l"></label>
     <label class="f"><span>Importe €</span><input id="g-imp" inputmode="decimal" value="${esc(g.importe===''?'':String(g.importe).replace('.',','))}"></label>
     <label class="f"><span>IVA</span><select id="g-iva">${[21,10,4,0].map(v=>`<option value="${v}" ${Number(g.ivaPct)===v?'selected':''}>${v} %</option>`).join('')}</select></label>
+    <div class="full tk" id="g-tk"><span class="tk-l">Foto del ticket o factura</span>
+      <div class="tk-row"><label class="btn" for="g-file"><svg class="i" viewBox="0 0 24 24" style="width:20px;height:20px"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>Hacer foto o elegir archivo</label>
+      <input type="file" id="g-file" accept="image/*,application/pdf" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none"></div>
+      <div id="g-prev" class="tk-prev" hidden></div></div>
     <label class="checkrow full"><input type="checkbox" id="g-inc" ${g.ivaIncluido!==false?'checked':''}> El importe lleva el IVA incluido</label>
     <label class="checkrow full"><input type="checkbox" id="g-ded" ${g.deducible!==false?'checked':''}> Deducible (es un gasto del negocio con factura a mi nombre)</label>
     <div class="card tot full" id="g-tot"></div></div></form>
@@ -1317,12 +1331,64 @@ function openGasto(id){
   const st = { kind:'form', html }; pushSheet(st);
   const upd = () => { const c = gastoCalc(readGasto(st.el)); st.el.querySelector('#g-tot').innerHTML = `<div><span>Base</span><span>${eur(c.base)}</span></div><div><span>IVA</span><span>${eur(c.cuota)}</span></div><div class="big"><span>Total</span><span>${eur(c.total)}</span></div>`; };
   st.el.addEventListener('input', upd); st.el.addEventListener('change', upd); upd();
+  st.ticket = undefined; // undefined = sin cambios, null = quitar, objeto = nuevo
+  const prev = st.el.querySelector('#g-prev');
+  const showPrev = t => {
+    if (!t) { prev.hidden = true; prev.innerHTML = ''; return; }
+    prev.hidden = false;
+    prev.innerHTML = (t.mime === 'application/pdf' ? `<div class="tk-pdf">PDF<br><small>${esc(t.nombre || 'documento')}</small></div>` : `<img src="${t.data}" alt="Ticket del gasto">`)
+      + `<div class="tk-act"><button type="button" class="btn sm" data-act="tk-view">Ver</button><button type="button" class="btn sm danger" data-act="tk-del">Quitar</button></div>`;
+    st.tkShown = t;
+  };
+  st.showPrev = showPrev;
+  if (id && g.ticket && S.db) { prev.hidden = false; prev.innerHTML = '<span class="muted">Cargando foto…</span>';
+    S.db.doc('tickets/' + id).get().then(sn => { if (st.ticket === undefined) showPrev(sn.exists ? sn.data() : null); }).catch(() => { prev.innerHTML = '<span class="muted">No se pudo cargar la foto.</span>'; }); }
+  st.el.querySelector('#g-file').addEventListener('change', async ev => {
+    const f = ev.target.files[0]; ev.target.value = ''; if (!f) return;
+    try { const t = await prepTicket(f); st.ticket = t; showPrev(t); } catch (e) { toast(e.message || 'No se pudo leer el archivo.', true); }
+  });
+}
+const TK_MAX = 700 * 1024;
+async function prepTicket(f){
+  if (f.type === 'application/pdf') {
+    if (f.size > TK_MAX * 0.74) throw new Error('El PDF es demasiado grande (máx. 500 KB). Haz una foto del ticket.');
+    const data = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(f); });
+    return { data, mime: 'application/pdf', nombre: f.name };
+  }
+  if (!/^image\//.test(f.type) && !/\.(jpe?g|png|heic|heif|webp)$/i.test(f.name)) throw new Error('Elige una foto o un PDF.');
+  const url = URL.createObjectURL(f);
+  try {
+    const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => rej(new Error('Este formato de foto no se puede leer. Prueba con otra foto.')); i.src = url; });
+    let max = 1600, q = .72, data = '';
+    for (let k = 0; k < 6; k++) {
+      const sc = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+      const c = document.createElement('canvas'); c.width = Math.round(img.naturalWidth * sc); c.height = Math.round(img.naturalHeight * sc);
+      const cx = c.getContext('2d'); cx.fillStyle = '#fff'; cx.fillRect(0, 0, c.width, c.height); cx.drawImage(img, 0, 0, c.width, c.height);
+      data = c.toDataURL('image/jpeg', q);
+      if (data.length < TK_MAX) break;
+      max = Math.round(max * .8); q = Math.max(.5, q - .06);
+    }
+    return { data, mime: 'image/jpeg', nombre: (f.name || 'ticket').replace(/\.\w+$/, '') + '.jpg' };
+  } finally { URL.revokeObjectURL(url); }
+}
+function viewTicket(t){
+  if (!t) return;
+  if (t.mime === 'application/pdf') { const a = document.createElement('a'); a.href = t.data; a.download = t.nombre || 'ticket.pdf'; document.body.append(a); a.click(); a.remove(); return; }
+  const ov = document.createElement('div'); ov.className = 'tk-ov'; ov.innerHTML = `<img src="${t.data}" alt="Ticket"><button class="x" aria-label="Cerrar">×</button>`;
+  ov.onclick = () => ov.remove(); document.body.append(ov);
 }
 function readGasto(el){ return { fecha: el.querySelector('#g-fecha').value, categoria: el.querySelector('#g-cat').value, proveedor: el.querySelector('#g-prov').value.trim(), concepto: el.querySelector('#g-conc').value.trim(), importe: parseNum(el.querySelector('#g-imp').value), ivaPct: Number(el.querySelector('#g-iva').value), ivaIncluido: el.querySelector('#g-inc').checked, deducible: el.querySelector('#g-ded').checked }; }
 async function saveGasto(el, id){
   const g = readGasto(el); if (!g.fecha) return toast('Pon la fecha.', true); if (!g.importe) return toast('Escribe el importe.', true);
   Object.assign(g, gastoCalc(g));
-  try { await put('gastos', id || null, g); popSheet(); toast('Gasto guardado'); } catch (e) {}
+  const st = S.stack[S.stack.length - 1] || {}, old = id ? byId('gastos', id) : null;
+  g.ticket = st.ticket === undefined ? !!(old && old.ticket) : !!st.ticket;
+  try {
+    const gid = await put('gastos', id || null, g);
+    if (st.ticket) await put('tickets', gid, st.ticket);
+    else if (st.ticket === null && id) await del('tickets', id).catch(() => {});
+    popSheet(); toast(st.ticket ? 'Gasto y foto guardados' : 'Gasto guardado');
+  } catch (e) {}
 }
 function openCliente(id){
   const c = id ? byId('clientes', id) : {}; const f = (k,l,cls='',t='text',im='') => `<label class="f ${cls}"><span>${l}</span><input id="c-${k}" type="${t}" ${im?`inputmode="${im}"`:''} value="${esc(c[k])}"></label>`;
@@ -1415,7 +1481,9 @@ document.addEventListener('click', async ev => {
     case 'backup': saveBackup(); break;
     case 'restore': { const fi = document.getElementById('restoreFile'); if (fi) fi.click(); break; }
     case 'save-gasto': saveGasto(st.el, b.dataset.id); break;
-    case 'del-gasto': if (await ask('¿Borrar el gasto?', 'No se puede deshacer.', 'Borrar', true)) del('gastos', b.dataset.id).then(()=>{ popSheet(); toast('Gasto borrado'); }).catch(()=>{}); break;
+    case 'tk-view': viewTicket(st.tkShown); break;
+    case 'tk-del': st.ticket = null; st.tkShown = null; st.showPrev(null); break;
+    case 'del-gasto': if (await ask('¿Borrar el gasto?', 'No se puede deshacer.', 'Borrar', true)) del('gastos', b.dataset.id).then(()=>{ del('tickets', b.dataset.id).catch(()=>{}); popSheet(); toast('Gasto borrado'); }).catch(()=>{}); break;
     case 'save-cli': {
       const el = st.el, c = {}; ['nombre','nif','tel','email','direccion','cp','poblacion','notas'].forEach(k => c[k] = el.querySelector('#c-'+k).value.trim());
       if (!c.nombre) return toast('Escribe el nombre.', true);
