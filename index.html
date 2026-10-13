@@ -264,8 +264,15 @@ body.locked nav.bot,body.locked header.top .yearsel,body.locked header.top .icon
 .upd-pill{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(84px + env(safe-area-inset-bottom,0px));z-index:35;border:0;border-radius:999px;padding:10px 16px;min-height:42px;background:var(--hero);color:var(--hero-ink);font:700 14px var(--f-body);box-shadow:var(--lift);display:flex;align-items:center;gap:8px;cursor:pointer}
 .upd-pill span{width:9px;height:9px;border-radius:50%;background:#E9CF4A;box-shadow:0 0 0 3px rgba(233,207,74,.3)}
 @media(min-width:980px){.upd-pill{bottom:20px;left:calc(50% + 118px)}}
-.tk{display:grid;gap:8px}.tk-l{font-size:14px;font-weight:700;color:var(--muted)}
-.tk-row{position:relative}.tk-row label.btn{width:100%;border-style:dashed;cursor:pointer}
+.tk{display:grid;gap:8px}
+.ocr-fill{background:#FFF7B8!important;border-color:#E2C93A!important;color:#22251D!important}
+.banner.warn{background:var(--warn-bg);color:var(--warn)}
+.ocr-spin{width:18px;height:18px;border-radius:50%;border:3px solid currentColor;border-right-color:transparent;animation:ocrsp .8s linear infinite;flex:none}
+@keyframes ocrsp{to{transform:rotate(360deg)}}.tk-l{font-size:14px;font-weight:700;color:var(--muted)}
+.tk-row{position:relative}
+.tk-drop{display:none;font-size:13px;color:var(--muted);text-align:center;margin-top:4px}
+@media(hover:hover) and (pointer:fine){.tk-drop{display:block}}
+.tk.drop-on .tk-row label.btn{background:var(--soft);border-color:var(--green);border-width:2px;color:var(--green-ink);min-height:90px}.tk-row label.btn{width:100%;border-style:dashed;cursor:pointer}
 .tk-prev{display:flex;gap:12px;align-items:center;background:var(--card);border-radius:var(--r);padding:10px;box-shadow:var(--lift)}
 .tk-prev img{width:96px;height:96px;object-fit:cover;border-radius:10px;background:#fff}
 .tk-pdf{width:96px;height:96px;border-radius:10px;background:var(--bad-bg);color:var(--bad);display:grid;place-items:center;text-align:center;font-weight:800;font-size:18px;line-height:1.1;overflow:hidden}
@@ -1320,12 +1327,14 @@ function openGasto(id){
   const html = shHead(id ? 'Editar gasto' : 'Nuevo gasto') + `<form class="sb" id="gs" novalidate><div class="fgrid">
     <label class="f"><span>Fecha</span><input type="date" id="g-fecha" value="${esc(g.fecha)}"></label>
     <label class="f"><span>Categoría</span><select id="g-cat">${CATS.map(c=>`<option ${c===g.categoria?'selected':''}>${c}</option>`).join('')}</select></label>
+    <div class="full banner info" id="g-ocr" hidden></div>
     <label class="f full"><span>Proveedor</span><input id="g-prov" value="${esc(g.proveedor)}" placeholder="Ej.: Pinturas del Norte"></label>
+    <label class="f full"><span>NIF / CIF del proveedor</span><input id="g-nif" value="${esc(g.nif||'')}" placeholder="Ej.: B39123456" autocapitalize="characters"></label>
     <label class="f full"><span>Concepto</span><input id="g-conc" value="${esc(g.concepto)}" placeholder="Ej.: 4 botes plástica blanca 15 l"></label>
     <label class="f"><span>Importe €</span><input id="g-imp" inputmode="decimal" value="${esc(g.importe===''?'':String(g.importe).replace('.',','))}"></label>
     <label class="f"><span>IVA</span><select id="g-iva">${[21,10,4,0].map(v=>`<option value="${v}" ${Number(g.ivaPct)===v?'selected':''}>${v} %</option>`).join('')}</select></label>
     <div class="full tk" id="g-tk"><span class="tk-l">Foto del ticket o factura</span>
-      <div class="tk-row"><label class="btn" for="g-file"><svg class="i" viewBox="0 0 24 24" style="width:20px;height:20px"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>Hacer foto o elegir archivo</label>
+      <div class="tk-row"><label class="btn" for="g-file"><svg class="i" viewBox="0 0 24 24" style="width:20px;height:20px"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>Hacer foto o elegir archivo</label><span class="tk-drop">o arrástralo aquí</span>
       <input type="file" id="g-file" accept="image/*,application/pdf" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none"></div>
       <div id="g-prev" class="tk-prev" hidden></div></div>
     <label class="checkrow full"><input type="checkbox" id="g-inc" ${g.ivaIncluido!==false?'checked':''}> El importe lleva el IVA incluido</label>
@@ -1347,10 +1356,92 @@ function openGasto(id){
   st.showPrev = showPrev;
   if (id && g.ticket && S.db) { prev.hidden = false; prev.innerHTML = '<span class="muted">Cargando foto…</span>';
     S.db.doc('tickets/' + id).get().then(sn => { if (st.ticket === undefined) showPrev(sn.exists ? sn.data() : null); }).catch(() => { prev.innerHTML = '<span class="muted">No se pudo cargar la foto.</span>'; }); }
-  st.el.querySelector('#g-file').addEventListener('change', async ev => {
-    const f = ev.target.files[0]; ev.target.value = ''; if (!f) return;
-    try { const t = await prepTicket(f); st.ticket = t; showPrev(t); } catch (e) { toast(e.message || 'No se pudo leer el archivo.', true); }
+  const usarArchivo = async f => {
+    if (!f) return;
+    let t; try { t = await prepTicket(f); st.ticket = t; showPrev(t); } catch (e) { toast(e.message || 'No se pudo leer el archivo.', true); return; }
+    if (t.mime === 'image/jpeg') leerTicket(st, t.data);
+  };
+  st.el.querySelector('#g-file').addEventListener('change', ev => { const f = ev.target.files[0]; ev.target.value = ''; usarArchivo(f); });
+  const zona = st.el.querySelector('#g-tk'); let dz = 0;
+  st.el.addEventListener('dragenter', e => { if ([...(e.dataTransfer?.types || [])].includes('Files')) { e.preventDefault(); dz++; zona.classList.add('drop-on'); } });
+  st.el.addEventListener('dragover', e => { if ([...(e.dataTransfer?.types || [])].includes('Files')) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; } });
+  st.el.addEventListener('dragleave', () => { if (--dz <= 0) { dz = 0; zona.classList.remove('drop-on'); } });
+  st.el.addEventListener('drop', e => { e.preventDefault(); dz = 0; zona.classList.remove('drop-on'); const f = e.dataTransfer?.files?.[0]; if (f) { zona.scrollIntoView({ block:'nearest' }); usarArchivo(f); } });
+  st.el.querySelectorAll('input,select').forEach(x => x.addEventListener('input', e => { if (e.isTrusted) x.dataset.touched = '1'; x.classList.remove('ocr-fill'); }));
+}
+/* ---------- lectura automática del ticket ---------- */
+function parseTicket(txt){
+  const raw = String(txt || '').replace(/\r/g, '');
+  const lines = raw.split('\n').map(l => l.replace(/\s+/g, ' ').trim()).filter(Boolean);
+  const up = l => l.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase();
+  const amtRe = /(\d{1,3}(?:[.\s]\d{3})*|\d+)[,.'](\d{2})(?!\d)/g;
+  const amts = l => { const out = []; let m; amtRe.lastIndex = 0; while ((m = amtRe.exec(l))) out.push(parseFloat(m[1].replace(/[.\s]/g, '') + '.' + m[2])); return out; };
+  const res = {};
+  // total
+  let best = null;
+  lines.forEach((l, i) => {
+    const U = up(l);
+    if (!/TOTAL|IMPORTE|A PAGAR|TARJETA|EFECTIVO/.test(U) || /SUBTOTAL|TOTAL IVA|TOTAL BASE|BASE IMP|CUOTA|ENTREGADO|CAMBIO|DEVOL/.test(U)) return;
+    let a = amts(l); if (!a.length && lines[i + 1]) a = amts(lines[i + 1]);
+    if (!a.length) { const m = l.match(/(\d{3,6})\s*(?:€|EUR|E)?\s*$/i); if (m) a = [parseInt(m[1], 10) / 100]; } // coma perdida al leer
+    if (!a.length) return;
+    const score = (/TOTAL A PAGAR|TOTAL FACTURA|IMPORTE TOTAL|TOTAL EUR|TOTAL €/.test(U) ? 3 : /^TOTAL|TOTAL\b/.test(U) ? 2 : 1);
+    const v = Math.max(...a);
+    if (!best || score > best.s || (score === best.s && v > best.v)) best = { s: score, v };
   });
+  if (!best) { const all = lines.filter(l => !/\d\s?(L|LT|LTS|LITROS|KG|UDS?)\b|PRECIO|P\/L|€\/L/i.test(l)).flatMap(amts).filter(v => v < 100000); if (all.length) best = { v: Math.max(...all) }; }
+  if (best) res.importe = best.v;
+  // fecha
+  const dm = raw.match(/\b(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})\b/);
+  if (dm) { let [, d, m, y] = dm; y = y.length === 2 ? '20' + y : y; d = +d; m = +m;
+    if (d >= 1 && d <= 31 && m >= 1 && m <= 12 && +y >= 2015 && +y <= 2099) res.fecha = y + '-' + String(m).padStart(2, '0') + '-' + String(d).padStart(2, '0'); }
+  // IVA
+  const ivas = [...raw.matchAll(/\b(21|10|4)[,.]?0{0,2}\s?%/g)].map(m => +m[1]);
+  if (ivas.length) res.ivaPct = ivas.sort((a, b) => ivas.filter(x => x === b).length - ivas.filter(x => x === a).length)[0];
+  // NIF / CIF proveedor
+  const nif = raw.toUpperCase().replace(/[\s.-]/g, ' ').match(/\b(?:N\.?I\.?F|C\.?I\.?F)?[: ]*([ABCDEFGHJNPQRSUVW]\s?\d{7}\s?[0-9A-J]|\d{8}\s?[A-Z])\b/);
+  if (nif) res.nif = nif[1].replace(/\s/g, '');
+  // proveedor: primera línea "con letras" que no sea genérica
+  const skip = /FACTURA|TICKET|SIMPLIFICADA|NIF|CIF|TEL|FECHA|HORA|WWW|HTTP|@|C\/|CALLE|AVDA|^\d/;
+  const cand = lines.slice(0, 8).filter(l => /[A-Za-zÁÉÍÓÚÑ]{3,}/.test(l) && !skip.test(up(l)) && l.length <= 40);
+  const company = cand.find(l => /\bS\.?\s?L\.?U?\b|\bS\.?\s?A\.?\b|\bS\.?\s?COOP/.test(up(l))) || cand[0];
+  if (company) res.proveedor = company.replace(/[^\wÁÉÍÓÚÑáéíóúñ&.,' -]/g, '').trim();
+  // categoría
+  const U = up(raw);
+  if (/GASOLIN|CARBURANT|GASOIL|DIESEL|REPSOL|CEPSA|GALP|PETRONOR|SHELL|BALLENOIL|PLENOIL|LITROS/.test(U)) res.categoria = 'Vehículo y combustible';
+  else if (/PINTUR|BRICO|LEROY|FERRET|DROGUER|RODILLO|BROCHA|ESMALTE|PLASTICA|MASILLA|DISOLVENTE|TITANLUX|BRUGUER|VALENTINE|JUNO/.test(U)) res.categoria = 'Pintura y material';
+  else if (/MOVISTAR|VODAFONE|ORANGE|DIGI|MASMOVIL|YOIGO|TELEFON/.test(U)) res.categoria = 'Teléfono';
+  else if (/SEGURO|MAPFRE|MUTUA|ALLIANZ|AXA/.test(U)) res.categoria = 'Seguros';
+  return res;
+}
+
+let tessP = null;
+function loadTesseract(){
+  if (window.Tesseract) return Promise.resolve();
+  return tessP = tessP || new Promise((res, rej) => { const sc = document.createElement('script'); sc.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js'; sc.onload = res; sc.onerror = () => { tessP = null; rej(new Error('net')); }; document.head.append(sc); });
+}
+async function leerTicket(st, dataUrl){
+  const box = st.el.querySelector('#g-ocr'); if (!box) return;
+  const say = (h, cls) => { box.className = 'full banner ' + (cls || 'info'); box.innerHTML = h; box.hidden = false; };
+  say('<span class="ocr-spin"></span><span style="flex:1">Leyendo el ticket… <b id="ocr-p">0 %</b></span>');
+  let worker;
+  try {
+    await loadTesseract();
+    worker = await Tesseract.createWorker('spa', 1, { logger: m => { const p = st.el.querySelector('#ocr-p'); if (p && m.status === 'recognizing text') p.textContent = Math.round(m.progress * 100) + ' %'; } });
+    const { data } = await worker.recognize(dataUrl);
+    if (!st.el.isConnected) return;
+    const r = parseTicket(data.text), el = st.el, puestos = [];
+    const put = (sel, val, name, force) => { const x = el.querySelector(sel); if (!x || val == null || val === '') return; if (x.dataset.touched && !force) return; if (x.value && x.dataset.auto !== '1' && !force && sel !== '#g-fecha' && sel !== '#g-cat' && sel !== '#g-iva') return;
+      x.value = val; x.dataset.auto = '1'; x.classList.add('ocr-fill'); puestos.push(name); };
+    put('#g-prov', r.proveedor, 'proveedor'); put('#g-nif', r.nif, 'NIF');
+    if (r.importe) { put('#g-imp', String(r.importe.toFixed(2)).replace('.', ','), 'importe'); const inc = el.querySelector('#g-inc'); if (inc && !inc.dataset.touched) inc.checked = true; }
+    put('#g-fecha', r.fecha, 'fecha'); if (r.ivaPct != null) put('#g-iva', String(r.ivaPct), 'IVA'); put('#g-cat', r.categoria, 'categoría');
+    el.dispatchEvent(new Event('input'));
+    if (puestos.length) say('<span style="flex:1">He rellenado <b>' + puestos.join(', ') + '</b> con la foto. <b>Revísalos</b> antes de guardar: están marcados en amarillo.</span>');
+    else say('<span style="flex:1">No he podido leer datos claros en la foto. Rellénalos a mano.</span>', 'warn');
+  } catch (e) {
+    if (st.el.isConnected) say('<span style="flex:1">' + (e && e.message === 'net' ? 'Sin conexión: no se puede leer el ticket ahora. Rellena los datos a mano.' : 'No se pudo leer el ticket. Rellena los datos a mano.') + '</span>', 'warn');
+  } finally { if (worker) worker.terminate().catch(() => {}); }
 }
 const TK_MAX = 700 * 1024;
 async function prepTicket(f){
@@ -1381,7 +1472,7 @@ function viewTicket(t){
   const ov = document.createElement('div'); ov.className = 'tk-ov'; ov.innerHTML = `<img src="${t.data}" alt="Ticket"><button class="x" aria-label="Cerrar">×</button>`;
   ov.onclick = () => ov.remove(); document.body.append(ov);
 }
-function readGasto(el){ return { fecha: el.querySelector('#g-fecha').value, categoria: el.querySelector('#g-cat').value, proveedor: el.querySelector('#g-prov').value.trim(), concepto: el.querySelector('#g-conc').value.trim(), importe: parseNum(el.querySelector('#g-imp').value), ivaPct: Number(el.querySelector('#g-iva').value), ivaIncluido: el.querySelector('#g-inc').checked, deducible: el.querySelector('#g-ded').checked }; }
+function readGasto(el){ return { fecha: el.querySelector('#g-fecha').value, categoria: el.querySelector('#g-cat').value, proveedor: el.querySelector('#g-prov').value.trim(), nif: (el.querySelector('#g-nif').value || '').trim().toUpperCase(), concepto: el.querySelector('#g-conc').value.trim(), importe: parseNum(el.querySelector('#g-imp').value), ivaPct: Number(el.querySelector('#g-iva').value), ivaIncluido: el.querySelector('#g-inc').checked, deducible: el.querySelector('#g-ded').checked }; }
 async function saveGasto(el, id){
   const g = readGasto(el); if (!g.fecha) return toast('Pon la fecha.', true); if (!g.importe) return toast('Escribe el importe.', true);
   Object.assign(g, gastoCalc(g));
@@ -1418,8 +1509,8 @@ function csvFacturas(){
 }
 function csvGastos(){
   const y = S.year, ls = S.gastos.filter(g => yearOf(g.fecha)===y).sort((a,b)=>a.fecha.localeCompare(b.fecha));
-  const rows = [['Fecha','Proveedor','Concepto','Categoría','Base','Tipo IVA','Cuota IVA','Total','Deducible']];
-  ls.forEach(g => rows.push([fmtDate(g.fecha), g.proveedor, g.concepto, g.categoria, fmtNum(g.base), g.ivaPct, fmtNum(g.cuota), fmtNum(g.total), g.deducible===false?'No':'Sí']));
+  const rows = [['Fecha','Proveedor','NIF proveedor','Concepto','Categoría','Base','Tipo IVA','Cuota IVA','Total','Deducible']];
+  ls.forEach(g => rows.push([fmtDate(g.fecha), g.proveedor, g.nif || '', g.concepto, g.categoria, fmtNum(g.base), g.ivaPct, fmtNum(g.cuota), fmtNum(g.total), g.deducible===false?'No':'Sí']));
   saveCsv(`Gastos ${y}.csv`, rows);
 }
 
@@ -1597,7 +1688,7 @@ S.introOn = true;
 playIntro(() => { S.introOn = false; if (S.view === 'inicio' && S.ready && !S.animDone) render(); });
 
 /* ---------- avisos de actualización ---------- */
-const APP_VERSION = '2026.10.13-2157';
+const APP_VERSION = '2026.10.13-2202';
 const UPD = { remote: null, notas: '', asked: '' };
 async function checkUpdate(){
   if (!/^https?:/.test(location.protocol)) return;
