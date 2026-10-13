@@ -898,7 +898,7 @@ function vGastos(){
 }
 function vMas(){
   const it = (v, t, s, col, icon) => `<button class="chipcard" data-act="go" data-v="${v}" style="--sw:${col}"><span class="sw" style="justify-content:center;align-items:center"><svg class="i" viewBox="0 0 24 24" style="width:26px;height:26px;stroke:#1A1C14">${icon}</svg></span><span class="main"><span class="t">${t}</span><span class="s">${s}</span></span></button>`;
-  return `<h1 class="view">Más</h1><div class="list">
+  return `<h1 class="view">Más</h1><div class="card section"><div class="row"><span style="flex:1">Versión de la app<br><b class="num">${esc(APP_VERSION)}</b></span><button class="btn sm" data-act="buscar-upd">Buscar actualizaciones</button></div></div><div class="list">
   ${it('clientes','Clientes', S.clientes.length + (S.clientes.length===1?' cliente guardado':' clientes guardados'), WHEEL[5], '<circle cx="9" cy="8" r="4"/><path d="M2 21c0-4 3-6 7-6s7 2 7 6M17 11a3 3 0 1 0 0-6M22 21c0-3-2-5-5-5"/>')}
   ${it('impuestos','Impuestos y libros','IVA trimestral (303), IRPF (130) y libros en CSV', WHEEL[1], '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>')}
   ${it('ajustes','Datos de la empresa y sesión','NIF, dirección, IBAN, objetivo anual, copias y cerrar sesión', WHEEL[8], '<path d="M4 21V8l8-5 8 5v13"/><path d="M9 21v-6h6v6"/>')}
@@ -1613,6 +1613,7 @@ document.addEventListener('click', async ev => {
     case 'backup': saveBackup(); break;
     case 'restore': { const fi = document.getElementById('restoreFile'); if (fi) fi.click(); break; }
     case 'save-gasto': saveGasto(st.el, b.dataset.id); break;
+    case 'buscar-upd': { b.disabled = true; const r = await checkUpdate(true); b.disabled = false; if (r === 'ok') toast('Tienes la última versión.'); else if (r === 'err') toast('No se pudo comprobar. Revisa la conexión.', true); break; }
     case 'tk-view': viewTicket(st.tkShown); break;
     case 'tk-del': st.ticket = null; st.tkShown = null; st.showPrev(null); break;
     case 'del-gasto': if (await ask('¿Borrar el gasto?', 'No se puede deshacer.', 'Borrar', true)) del('gastos', b.dataset.id).then(()=>{ del('tickets', b.dataset.id).catch(()=>{}); popSheet(); toast('Gasto borrado'); }).catch(()=>{}); break;
@@ -1725,20 +1726,21 @@ S.introOn = true;
 playIntro(() => { S.introOn = false; if (S.view === 'inicio' && S.ready && !S.animDone) render(); });
 
 /* ---------- avisos de actualización ---------- */
-const APP_VERSION = '2026.10.13-2207';
+const APP_VERSION = '2026.10.13-2209';
 const UPD = { remote: null, notas: '', asked: '' };
-async function checkUpdate(){
-  if (!/^https?:/.test(location.protocol)) return;
+async function checkUpdate(manual){
+  if (!/^https?:/.test(location.protocol)) return 'err';
   try {
     const r = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });
-    if (!r.ok) return;
+    if (!r.ok) return 'err';
     const v = await r.json();
-    if (!v || !v.version || v.version === APP_VERSION) return;
+    if (!v || !v.version || v.version === APP_VERSION) return 'ok';
     UPD.remote = v.version; UPD.notas = v.notas || '';
     showUpdPill();
     let seen = ''; try { seen = sessionStorage.getItem('peque-upd-no') || ''; } catch (e) {}
-    if (seen !== v.version && UPD.asked !== v.version) askUpdate();
-  } catch (e) {}
+    if (manual || (seen !== v.version && UPD.asked !== v.version)) askUpdate();
+    return 'new';
+  } catch (e) { return 'err'; }
 }
 function showUpdPill(){
   if (document.getElementById('upd-pill')) return;
