@@ -1359,7 +1359,8 @@ function openGasto(id){
   const usarArchivo = async f => {
     if (!f) return;
     let t; try { t = await prepTicket(f); st.ticket = t; showPrev(t); } catch (e) { toast(e.message || 'No se pudo leer el archivo.', true); return; }
-    if (t.mime === 'image/jpeg') leerTicket(st, t.data);
+    if (t.mime === 'image/jpeg' && !t.desdePdf) leerTicket(st, { img: t.data });
+    else leerTicket(st, { pdf: f });
   };
   st.el.querySelector('#g-file').addEventListener('change', ev => { const f = ev.target.files[0]; ev.target.value = ''; usarArchivo(f); });
   const zona = st.el.querySelector('#g-tk'); let dz = 0;
@@ -1415,38 +1416,74 @@ function parseTicket(txt){
   return res;
 }
 
+let pdfjsP = null;
+const PDFJS = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';
+function loadPdfjs(){
+  if (window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+  return pdfjsP = pdfjsP || new Promise((res, rej) => { const sc = document.createElement('script'); sc.src = PDFJS + 'pdf.min.js';
+    sc.onload = () => { window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS + 'pdf.worker.min.js'; res(window.pdfjsLib); }; sc.onerror = () => { pdfjsP = null; rej(new Error('net')); }; document.head.append(sc); });
+}
+async function abrirPdf(f){ const lib = await loadPdfjs(); return lib.getDocument({ data: new Uint8Array(await f.arrayBuffer()) }).promise; }
+async function textoPdf(pdf){
+  let out = '';
+  for (let n = 1; n <= Math.min(pdf.numPages, 3); n++) {
+    const pg = await pdf.getPage(n), tc = await pg.getTextContent(), rows = [];
+    tc.items.forEach(it => { if (!it.str.trim()) return; const y = Math.round(it.transform[5]), x = it.transform[4];
+      let r = rows.find(r => Math.abs(r.y - y) <= 3); if (!r) rows.push(r = { y, items: [] }); r.items.push({ x, s: it.str }); });
+    rows.sort((a, b) => b.y - a.y).forEach(r => { out += r.items.sort((a, b) => a.x - b.x).map(i => i.s).join(' ') + '\n'; });
+  }
+  return out;
+}
+async function paginaPdfJpeg(pdf, maxPx){
+  const pg = await pdf.getPage(1), v0 = pg.getViewport({ scale: 1 }), sc = Math.min(3, maxPx / Math.max(v0.width, v0.height)), v = pg.getViewport({ scale: sc });
+  const c = document.createElement('canvas'); c.width = Math.round(v.width); c.height = Math.round(v.height);
+  const cx = c.getContext('2d'); cx.fillStyle = '#fff'; cx.fillRect(0, 0, c.width, c.height);
+  await pg.render({ canvasContext: cx, viewport: v }).promise;
+  let q = .78, d = c.toDataURL('image/jpeg', q); while (d.length > TK_MAX && q > .45) { q -= .08; d = c.toDataURL('image/jpeg', q); }
+  return d;
+}
 let tessP = null;
 function loadTesseract(){
   if (window.Tesseract) return Promise.resolve();
   return tessP = tessP || new Promise((res, rej) => { const sc = document.createElement('script'); sc.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js'; sc.onload = res; sc.onerror = () => { tessP = null; rej(new Error('net')); }; document.head.append(sc); });
 }
-async function leerTicket(st, dataUrl){
+async function leerTicket(st, src){
   const box = st.el.querySelector('#g-ocr'); if (!box) return;
   const say = (h, cls) => { box.className = 'full banner ' + (cls || 'info'); box.innerHTML = h; box.hidden = false; };
-  say('<span class="ocr-spin"></span><span style="flex:1">Leyendo el ticket… <b id="ocr-p">0 %</b></span>');
-  let worker;
+  say('<span class="ocr-spin"></span><span style="flex:1">Leyendo ' + (src.pdf ? 'el PDF' : 'el ticket') + '… <b id="ocr-p"></b></span>');
+  let worker, texto = '', dataUrl = src.img;
   try {
-    await loadTesseract();
-    worker = await Tesseract.createWorker('spa', 1, { logger: m => { const p = st.el.querySelector('#ocr-p'); if (p && m.status === 'recognizing text') p.textContent = Math.round(m.progress * 100) + ' %'; } });
-    const { data } = await worker.recognize(dataUrl);
+    if (src.pdf) {
+      const pdf = await abrirPdf(src.pdf);
+      texto = await textoPdf(pdf);
+      if (texto.replace(/\s/g, '').length < 30) dataUrl = await paginaPdfJpeg(pdf, 2000); // PDF escaneado: leer como foto
+    }
+    if (dataUrl) {
+      await loadTesseract();
+      worker = await Tesseract.createWorker('spa', 1, { logger: m => { const p = st.el.querySelector('#ocr-p'); if (p && m.status === 'recognizing text') p.textContent = Math.round(m.progress * 100) + ' %'; } });
+      texto = (await worker.recognize(dataUrl)).data.text;
+    }
     if (!st.el.isConnected) return;
-    const r = parseTicket(data.text), el = st.el, puestos = [];
+    const r = parseTicket(texto), el = st.el, puestos = [];
     const put = (sel, val, name, force) => { const x = el.querySelector(sel); if (!x || val == null || val === '') return; if (x.dataset.touched && !force) return; if (x.value && x.dataset.auto !== '1' && !force && sel !== '#g-fecha' && sel !== '#g-cat' && sel !== '#g-iva') return;
       x.value = val; x.dataset.auto = '1'; x.classList.add('ocr-fill'); puestos.push(name); };
     put('#g-prov', r.proveedor, 'proveedor'); put('#g-nif', r.nif, 'NIF');
     if (r.importe) { put('#g-imp', String(r.importe.toFixed(2)).replace('.', ','), 'importe'); const inc = el.querySelector('#g-inc'); if (inc && !inc.dataset.touched) inc.checked = true; }
     put('#g-fecha', r.fecha, 'fecha'); if (r.ivaPct != null) put('#g-iva', String(r.ivaPct), 'IVA'); put('#g-cat', r.categoria, 'categoría');
     el.dispatchEvent(new Event('input'));
-    if (puestos.length) say('<span style="flex:1">He rellenado <b>' + puestos.join(', ') + '</b> con la foto. <b>Revísalos</b> antes de guardar: están marcados en amarillo.</span>');
-    else say('<span style="flex:1">No he podido leer datos claros en la foto. Rellénalos a mano.</span>', 'warn');
+    if (puestos.length) say('<span style="flex:1">He rellenado <b>' + puestos.join(', ') + '</b> con ' + (src.pdf ? 'el PDF' : 'la foto') + '. <b>Revísalos</b> antes de guardar: están marcados en amarillo.</span>');
+    else say('<span style="flex:1">No he podido leer datos claros en ' + (src.pdf ? 'el PDF' : 'la foto') + '. Rellénalos a mano.</span>', 'warn');
   } catch (e) {
     if (st.el.isConnected) say('<span style="flex:1">' + (e && e.message === 'net' ? 'Sin conexión: no se puede leer el ticket ahora. Rellena los datos a mano.' : 'No se pudo leer el ticket. Rellena los datos a mano.') + '</span>', 'warn');
   } finally { if (worker) worker.terminate().catch(() => {}); }
 }
 const TK_MAX = 700 * 1024;
 async function prepTicket(f){
-  if (f.type === 'application/pdf') {
-    if (f.size > TK_MAX * 0.74) throw new Error('El PDF es demasiado grande (máx. 500 KB). Haz una foto del ticket.');
+  if (f.type === 'application/pdf' || /\.pdf$/i.test(f.name)) {
+    if (f.size > TK_MAX * 0.74) {
+      try { const pdf = await abrirPdf(f); return { data: await paginaPdfJpeg(pdf, 1800), mime: 'image/jpeg', nombre: f.name.replace(/\.pdf$/i, '') + '.jpg', desdePdf: true }; }
+      catch (e) { throw new Error('El PDF es grande y no se ha podido convertir. Haz una foto del ticket.'); }
+    }
     const data = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(f); });
     return { data, mime: 'application/pdf', nombre: f.name };
   }
@@ -1688,7 +1725,7 @@ S.introOn = true;
 playIntro(() => { S.introOn = false; if (S.view === 'inicio' && S.ready && !S.animDone) render(); });
 
 /* ---------- avisos de actualización ---------- */
-const APP_VERSION = '2026.10.13-2202';
+const APP_VERSION = '2026.10.13-2207';
 const UPD = { remote: null, notas: '', asked: '' };
 async function checkUpdate(){
   if (!/^https?:/.test(location.protocol)) return;
