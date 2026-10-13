@@ -261,6 +261,9 @@ table.t tr.res td{font-weight:800;border-bottom:0;font-family:var(--f-display);f
 #splash{position:fixed;left:0;top:0;width:100vw;height:100vh;pointer-events:none;z-index:70}
 body.locked nav.bot,body.locked header.top .yearsel,body.locked header.top .iconbtn{display:none}
 @media(min-width:980px){body.locked{padding-left:0}}
+.upd-pill{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(84px + env(safe-area-inset-bottom,0px));z-index:35;border:0;border-radius:999px;padding:10px 16px;min-height:42px;background:var(--hero);color:var(--hero-ink);font:700 14px var(--f-body);box-shadow:var(--lift);display:flex;align-items:center;gap:8px;cursor:pointer}
+.upd-pill span{width:9px;height:9px;border-radius:50%;background:#E9CF4A;box-shadow:0 0 0 3px rgba(233,207,74,.3)}
+@media(min-width:980px){.upd-pill{bottom:20px;left:calc(50% + 118px)}}
 .tk{display:grid;gap:8px}.tk-l{font-size:14px;font-weight:700;color:var(--muted)}
 .tk-row{position:relative}.tk-row label.btn{width:100%;border-style:dashed;cursor:pointer}
 .tk-prev{display:flex;gap:12px;align-items:center;background:var(--card);border-radius:var(--r);padding:10px;box-shadow:var(--lift)}
@@ -996,6 +999,7 @@ function pushSheet(s){
   return el;
 }
 function popSheet(){
+  setTimeout(() => { if (UPD.pending && !S.stack.length) { UPD.pending = false; askUpdate(); } }, 400);
   const s = S.stack.pop(); if (!s) return; s.el.remove(); s.scrim.remove();
   const t = S.stack[S.stack.length-1]; if (t) { t.el.hidden = false; t.scrim.hidden = false; if (t.kind==='detail') renderDetailInto(t); }
 }
@@ -1591,6 +1595,44 @@ function playIntro(onEnd){
 
 S.introOn = true;
 playIntro(() => { S.introOn = false; if (S.view === 'inicio' && S.ready && !S.animDone) render(); });
+
+/* ---------- avisos de actualización ---------- */
+const APP_VERSION = '2026.10.13-2157';
+const UPD = { remote: null, notas: '', asked: '' };
+async function checkUpdate(){
+  if (!/^https?:/.test(location.protocol)) return;
+  try {
+    const r = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });
+    if (!r.ok) return;
+    const v = await r.json();
+    if (!v || !v.version || v.version === APP_VERSION) return;
+    UPD.remote = v.version; UPD.notas = v.notas || '';
+    showUpdPill();
+    let seen = ''; try { seen = sessionStorage.getItem('peque-upd-no') || ''; } catch (e) {}
+    if (seen !== v.version && UPD.asked !== v.version) askUpdate();
+  } catch (e) {}
+}
+function showUpdPill(){
+  if (document.getElementById('upd-pill')) return;
+  const b = document.createElement('button'); b.id = 'upd-pill'; b.type = 'button'; b.className = 'upd-pill';
+  b.innerHTML = '<span></span>Actualización disponible'; b.onclick = askUpdate;
+  document.body.append(b);
+}
+async function askUpdate(){
+  if (document.getElementById('ix') || document.querySelector('.dlg')) { setTimeout(askUpdate, 1500); return; }
+  if (S.stack.length) { UPD.pending = true; return; } // no interrumpir mientras se edita
+  UPD.asked = UPD.remote;
+  const txt = (UPD.notas ? 'Novedades: ' + UPD.notas + '. ' : '') + 'Tarda unos segundos y no se pierde ningún dato.';
+  if (await ask('Hay una actualización de PEQUE Gestión', txt, 'Actualizar ahora')) {
+    location.replace(location.pathname + '?v=' + encodeURIComponent(UPD.remote));
+  } else {
+    try { sessionStorage.setItem('peque-upd-no', UPD.remote); } catch (e) {}
+    toast('Puedes actualizar cuando quieras desde el aviso de abajo.');
+  }
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkUpdate(); });
+setInterval(checkUpdate, 10 * 60 * 1000);
+setTimeout(checkUpdate, 6000);
 
 /* ---------- datos en la nube (Firebase) ---------- */
 const LS_BACKUP = 'peque-gestion-ultima-copia';
