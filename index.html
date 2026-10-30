@@ -151,7 +151,8 @@ button.tile:active{transform:scale(.98)}
 .seg button[aria-pressed=true]{background:var(--ink);border-color:var(--ink);color:var(--paper)}
 input,select,textarea{width:100%;border:1px solid var(--line);background:var(--card);border-radius:12px;padding:10px 12px;min-height:46px}
 textarea{min-height:80px;resize:vertical}
-label.f{display:grid;gap:5px;font-size:14px;font-weight:700;color:var(--muted);min-width:0}
+label.f,div.f{display:grid;gap:5px;font-size:14px;font-weight:700;color:var(--muted);min-width:0}
+div.f .rte{font-weight:400;color:var(--ink)}
 .fgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
 .fgrid .full{grid-column:1/-1}
 @media(max-width:420px){.fgrid.r1{grid-template-columns:1fr}}
@@ -258,6 +259,23 @@ table.t tr.res td{font-weight:800;border-bottom:0;font-family:var(--f-display);f
 .dlg .row .btn{flex:1}
 .scrim.top{z-index:50}
 .foot-note{font-size:13.5px;color:var(--muted);margin-top:10px}
+.rte{border:1px solid var(--line);border-radius:12px;background:var(--card);overflow:hidden}
+.rte:focus-within{border-color:var(--focus);box-shadow:0 0 0 3px color-mix(in srgb,var(--focus) 20%,transparent)}
+.rte-bar{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;padding:8px 10px;border-bottom:1px solid var(--line);background:var(--soft)}
+.rte-grp{display:inline-flex;align-items:center;gap:3px}
+.rte-lbl{font-size:12px;font-weight:700;color:var(--muted);margin-right:3px}
+.rte-btn{min-height:34px;padding:0 11px;border:1px solid var(--line);border-radius:9px;background:var(--card);cursor:pointer;font-size:14px}
+.rte-btn b{font-size:16px}
+.rte-clear{font-size:12.5px;color:var(--muted)}
+.rte-sw{position:relative;width:32px;height:32px;padding:0;border:1px solid var(--line);border-radius:8px;background:#fff;cursor:pointer;display:inline-grid;place-items:center;overflow:hidden}
+.rte-sw span{font-weight:800;font-size:16px;line-height:1}
+.rte-sw .rte-chip{width:20px;height:20px;border-radius:5px;border:1px solid rgba(0,0,0,.18)}
+.rte-x{position:absolute;left:3px;right:3px;top:50%;height:2px;background:#c62828;transform:rotate(-45deg)}
+.rte-btn:hover,.rte-sw:hover{border-color:var(--green)}
+.rte-ed{padding:10px 12px;outline:none;line-height:1.55;white-space:pre-wrap;word-break:break-word;background:#fff;color:#212529}
+.rte-hint{font-size:12px;color:var(--muted);padding:4px 12px 7px;border-top:1px dashed var(--line)}
+.rich-note{white-space:normal}
+
 .hash{font-size:11.5px;color:var(--muted);overflow-wrap:anywhere;font-family:ui-monospace,Menlo,monospace}
 .checkrow{display:flex;gap:10px;align-items:center;font-weight:600;font-size:15px}
 .checkrow input{width:22px;height:22px;min-height:0;flex:none}
@@ -423,6 +441,63 @@ async function sha256Hex(s) {
 }
 function csvRow(a) { return a.map(v => { v = String(v ?? ''); return /[;"\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; }).join(';'); }
 
+/* ---------- texto con formato: **negrita**, [color=#hex]…[/color], [fondo=#hex]…[/fondo] ---------- */
+const RICH_RE = /\*\*|\[color=(#[0-9a-fA-F]{6})\]|\[\/color\]|\[fondo=(#[0-9a-fA-F]{6})\]|\[\/fondo\]/g;
+const hasRich = s => /\*\*|\[(color|fondo)=#[0-9a-fA-F]{6}\]/.test(String(s || ''));
+function richParse(txt){ // -> líneas: [[{t,b,c,f}]]
+  const lines = [[]]; let b = false; const cs = [], fs = [];
+  const push = t => { t.split('\n').forEach((p, i) => { if (i) lines.push([]); if (p) lines[lines.length - 1].push({ t:p, b, c: cs[cs.length - 1] || null, f: fs[fs.length - 1] || null }); }); };
+  const s = String(txt || ''); let last = 0, m; RICH_RE.lastIndex = 0;
+  while ((m = RICH_RE.exec(s))) {
+    push(s.slice(last, m.index)); last = RICH_RE.lastIndex;
+    if (m[0] === '**') b = !b; else if (m[1]) cs.push(m[1].toLowerCase()); else if (m[0] === '[/color]') cs.pop(); else if (m[2]) fs.push(m[2].toLowerCase()); else fs.pop();
+  }
+  push(s.slice(last)); return lines;
+}
+const richPlain = s => richParse(s).map(l => l.map(r => r.t).join('')).join('\n');
+function richSerialize(lines){ // inversa de richParse
+  return lines.map(runs => {
+    const m = []; runs.forEach(r => { if (!r.t) return; const p = m[m.length - 1]; if (p && !!p.b === !!r.b && p.c === r.c && p.f === r.f) p.t += r.t; else m.push({ ...r }); });
+    return m.map(r => { let t = r.t; if (r.b && t.trim()) t = '**' + t + '**'; if (r.c) t = '[color=' + r.c + ']' + t + '[/color]'; if (r.f) t = '[fondo=' + r.f + ']' + t + '[/fondo]'; return t; }).join('');
+  }).join('\n');
+}
+function richConds(txt){ // condiciones "Título: texto" conservando formato
+  return richParse(txt).map(runs => {
+    const plain = runs.map(r => r.t).join(''); if (!plain.trim()) return null;
+    const i = plain.indexOf(':'); if (i <= 0) return { title: [], text: runs, plainTitle: '' };
+    const title = [], text = []; let pos = 0;
+    runs.forEach(r => { const a = pos, e = pos + r.t.length; pos = e;
+      if (e <= i) title.push(r); else if (a > i) text.push(r);
+      else { const cut = i - a; if (cut > 0) title.push({ ...r, t: r.t.slice(0, cut) }); if (r.t.length > cut + 1) text.push({ ...r, t: r.t.slice(cut + 1) }); } });
+    const trimR = (a, side) => { const k = side ? a.length - 1 : 0; if (a[k]) a[k] = { ...a[k], t: side ? a[k].t.replace(/\s+$/, '') : a[k].t.replace(/^\s+/, '') }; return a.filter(r => r.t); };
+    return { title: trimR(title, 1), text: trimR(text, 0), plainTitle: plain.slice(0, i).trim() };
+  }).filter(Boolean);
+}
+function richLayout(doc, runs, width, size, baseBold){ // parte en líneas midiendo cada trozo con su fuente
+  doc.setFontSize(size); const out = [[]]; let w = 0;
+  const toks = []; runs.forEach(r => String(r.t).split(/(\n| +)/).forEach(p => { if (p) toks.push({ ...r, t: p }); }));
+  const meas = t => { doc.setFont('helvetica', (baseBold || t.b) ? 'bold' : 'normal'); return doc.getTextWidth(t.t); };
+  const trim = l => { while (l.length && !l[l.length - 1].t.trim()) l.pop(); return l; };
+  for (const t of toks) {
+    if (t.t === '\n') { trim(out[out.length - 1]); out.push([]); w = 0; continue; }
+    const line = out[out.length - 1], tw = meas(t), sp = !t.t.trim();
+    if (sp) { if (line.length) { line.push({ ...t, w: tw }); w += tw; } continue; }
+    if (line.length && w + tw > width) { trim(line); out.push([{ ...t, w: tw }]); w = tw; }
+    else { line.push({ ...t, w: tw }); w += tw; }
+  }
+  trim(out[out.length - 1]); return out;
+}
+function richDraw(doc, lines, x, y, size, baseBold, baseColor){ // y = línea base de la 1ª línea; devuelve y tras la última
+  const lh = size * 0.3528 * 1.15;
+  lines.forEach(l => { let cx = x;
+    l.forEach(t => { doc.setFont('helvetica', (baseBold || t.b) ? 'bold' : 'normal'); doc.setFontSize(size);
+      if (t.f) { doc.setFillColor(t.f); doc.rect(cx - 0.05, y - size * 0.3528 * 0.86, t.w + 0.1, size * 0.3528 * 1.13, 'F'); }
+      if (t.c) doc.setTextColor(t.c); else doc.setTextColor(...baseColor);
+      doc.text(t.t, cx, y); cx += t.w; });
+    y += lh; });
+  return y;
+}
+
 /* ---------- PDF ---------- */
 const MESES_L = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
 function fechaLarga(s){ if (!s) return ''; const [y, m, d] = s.split('-').map(Number); return d + ' de ' + MESES_L[m - 1] + ' de ' + y; }
@@ -529,9 +604,14 @@ function buildPdf(JsPDF, kind, d, emp, logo, firma) {
     if (ty + tl.length * 4.4 > 276) { doc.addPage(); header(); ty = 56; }
     doc.text(tl, M, ty); ty += tl.length * 4.4 + 4;
   };
-  if (d.notas) { para('Observaciones: ' + d.notas); }
+  if (d.notas && richPlain(d.notas).trim()) {
+    const ls = richLayout(doc, [{ t:'Observaciones: ', b:true }].concat(...richParse(d.notas).map((l, i) => i ? [{ t:'\n' }].concat(l) : l)), W - 2 * M, 9.5, false);
+    if (ty + ls.length * 4.4 > 276) { doc.addPage(); header(); ty = 56; }
+    ty = richDraw(doc, ls, M, ty, 9.5, false, INK) + 4;
+  }
   if (isP) {
-    const conds = condicionesList(emp.condiciones);
+    const conds = richConds(emp.condiciones), autoPago = !hasRich(emp.condiciones);
+    if (autoPago) conds.forEach(c => { if (/pago/i.test(c.plainTitle)) { c.title = c.title.map(r => ({ ...r, f:'#fff200' })); c.text = c.text.map(r => ({ ...r, b:true, f:'#fff200' })); } });
     para('Nota: el presupuesto comprende únicamente los trabajos descritos.' + (conds.length ? ' Las condiciones, exclusiones y forma de pago se detallan en la página siguiente.' : ''));
     doc.addPage(); header();
     let y3 = 58;
@@ -539,11 +619,14 @@ function buildPdf(JsPDF, kind, d, emp, logo, firma) {
     doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(...GREY); doc.text('Las siguientes condiciones forman parte del presupuesto y delimitan el alcance de los trabajos.', M, y3 + 6.5);
     y3 += 13;
     if (conds.length) {
+      const CW = [48, W - 2 * M - 48], PAD = 3.2, FS = 9.5, LAY = [];
+      conds.forEach((c, i) => { LAY[i] = [richLayout(doc, [{ t:(i + 1) + '. ' }].concat(c.title.length ? c.title : [{ t:'Condición' }]), CW[0] - 2 * PAD, FS, true), richLayout(doc, c.text, CW[1] - 2 * PAD, FS, false)]; });
       doc.autoTable({ startY: y3, margin: { left: M, right: M, bottom: 20 }, theme: 'grid', rowPageBreak: 'avoid',
-        body: conds.map((c, i) => [(i + 1) + '. ' + (c[0] || 'Condición'), c[1]]),
-        styles: { font: 'helvetica', fontSize: 9.5, cellPadding: 3.2, textColor: INK, lineColor: LINE, lineWidth: 0.2, valign: 'top' },
-        columnStyles: { 0: { cellWidth: 48, fontStyle: 'bold', fillColor: LABEL_BG } },
-        didParseCell: h => { if (h.section === 'body' && /pago/i.test(conds[h.row.index][0] || '')) { h.cell.styles.fillColor = [255, 245, 0]; h.cell.styles.fontStyle = 'bold'; h.cell.styles.textColor = [20, 20, 20]; } } });
+        body: conds.map((c, i) => [LAY[i][0].map(() => ' '), LAY[i][1].map(() => ' ')]),
+        styles: { font: 'helvetica', fontSize: FS, cellPadding: PAD, textColor: INK, lineColor: LINE, lineWidth: 0.2, valign: 'top' },
+        columnStyles: { 0: { cellWidth: CW[0], fontStyle: 'bold', fillColor: LABEL_BG }, 1: { cellWidth: CW[1] } },
+        didDrawCell: h => { if (h.section !== 'body') return; const ls = LAY[h.row.index][h.column.index];
+          richDraw(doc, ls, h.cell.x + PAD, h.cell.y + PAD + FS * 0.3528 * 0.86, FS, h.column.index === 0, INK); } });
       y3 = doc.lastAutoTable.finalY + 12;
     }
     if (y3 + 80 > 276) { doc.addPage(); header(); y3 = 58; }
@@ -962,7 +1045,7 @@ function vAjustes(){
    <label class="f"><span>Validez del presupuesto (días)</span><input id="aj-validez" inputmode="numeric" value="${esc(e.validez)}"></label>
    <label class="f"><span>Vencimiento de factura (días)</span><input id="aj-vencimiento" inputmode="numeric" value="${esc(e.vencimiento)}"></label>
    ${f('lugar','Lugar que sale en los presupuestos')}${f('pie','Pie de página de los PDF','full')}
-   <label class="f full"><span>Condiciones del presupuesto (una por línea, “Título: texto”)</span><textarea id="aj-condiciones" rows="7" style="min-height:170px">${esc(e.condiciones)}</textarea></label>
+   <div class="f full"><span>Condiciones del presupuesto (una por línea, “Título: texto”)</span>${rteHtml('aj-condiciones', condEditable(e.condiciones), 170)}</div>
    <label class="checkrow full"><input type="checkbox" id="aj-firmar" ${e.firmar!==false?'checked':''}> Poner mi firma en los presupuestos</label>
   </div>
   <div class="row" style="margin-top:14px"><button class="btn pri" type="submit" ${S.canWrite?'':'disabled'}>Guardar datos</button></div></form>
@@ -970,6 +1053,84 @@ function vAjustes(){
   <div class="card section" style="margin-top:14px"><h2>Facturación y Verifactu</h2>
    <p class="muted" style="margin:0">Las facturas se numeran de forma correlativa por año (F2026-001, F2026-002…). Una vez emitidas no se pueden editar ni borrar, y cada una guarda una huella encadenada con la anterior. Para corregir una factura emitida usa “Rectificar”. Desde el 1 de julio de 2027 los autónomos deberán facturar con un programa adaptado a Verifactu (envío a la AEAT y código QR); esta app todavía no lo hace.</p></div>`;
 }
+
+function condEditable(t){ t = String(t || ''); if (hasRich(t)) return t; return t.split('\n').map(l => { const i = l.indexOf(':'); return i > 0 && /pago/i.test(l.slice(0, i)) ? '[fondo=#fff200]**' + l.trim() + '**[/fondo]' : l; }).join('\n'); }
+/* ---------- editor de texto con formato (negrita, color de letra, color de fondo) ---------- */
+const RTE_INK = '#212529';
+const RTE_COLORS = [['Automático', ''], ['Rojo', '#d32f2f'], ['Azul', '#1565c0'], ['Verde', '#2e7d32'], ['Naranja', '#e65100'], ['Morado', '#7b1fa2']];
+const RTE_FONDOS = [['Sin fondo', ''], ['Amarillo fosforito', '#fff200'], ['Verde fosforito', '#c6ff3d'], ['Rosa', '#ffb3de'], ['Azul claro', '#a7e3ff'], ['Naranja', '#ffc966']];
+function richRunHtml(r){
+  const st = []; if (r.b) st.push('font-weight:700'); if (r.c) st.push('color:' + r.c); if (r.f) st.push('background-color:' + r.f + ';color:' + (r.c || RTE_INK));
+  return st.length ? `<span style="${st.join(';')}">${esc(r.t)}</span>` : esc(r.t);
+}
+const richHtml = s => richParse(s).map(l => l.map(richRunHtml).join('')).join('<br>');
+const richEditorHtml = s => richParse(s).map(l => '<div>' + (l.length ? l.map(richRunHtml).join('') : '<br>') + '</div>').join('');
+function rteHtml(id, markup, minH){
+  const sw = (cmd, [n, v]) => cmd === 'color'
+    ? `<button type="button" class="rte-sw" data-rte="color" data-v="${v}" title="Letra: ${n}" aria-label="Color de letra: ${n}"><span style="color:${v || 'var(--ink)'}">A</span>${v ? '' : '<i class="rte-x"></i>'}</button>`
+    : `<button type="button" class="rte-sw" data-rte="fondo" data-v="${v}" title="Fondo: ${n}" aria-label="Color de fondo: ${n}"><span class="rte-chip" style="background:${v || 'transparent'}"></span>${v ? '' : '<i class="rte-x"></i>'}</button>`;
+  return `<div class="rte"><div class="rte-bar" role="toolbar" aria-label="Formato del texto">
+    <button type="button" class="rte-btn" data-rte="bold" title="Negrita"><b>N</b></button>
+    <span class="rte-grp"><span class="rte-lbl">Letra</span>${RTE_COLORS.map(c => sw('color', c)).join('')}</span>
+    <span class="rte-grp"><span class="rte-lbl">Fondo</span>${RTE_FONDOS.map(c => sw('fondo', c)).join('')}</span>
+    <button type="button" class="rte-btn rte-clear" data-rte="clear" title="Quitar formato">Quitar formato</button></div>
+    <div class="rte-ed" id="${id}" contenteditable="true" spellcheck="true" style="min-height:${minH || 90}px">${richEditorHtml(markup)}</div>
+    <div class="rte-hint">Selecciona el texto y pulsa un botón.</div></div>`;
+}
+function rteHex(c){
+  c = String(c || '').trim().toLowerCase(); if (!c || c === 'transparent' || c === 'inherit' || c === 'initial') return null;
+  let m = c.match(/^rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)(?:[,\s/]+([\d.]+))?\s*\)$/);
+  if (m) { if (m[4] !== undefined && Number(m[4]) === 0) return null; return '#' + [m[1], m[2], m[3]].map(x => Number(x).toString(16).padStart(2, '0')).join(''); }
+  if (/^#[0-9a-f]{6}$/.test(c)) return c; if (/^#[0-9a-f]{3}$/.test(c)) return '#' + c.slice(1).split('').map(x => x + x).join('');
+  try { const k = document.createElement('canvas').getContext('2d'); k.fillStyle = '#000001'; k.fillStyle = c; return k.fillStyle === '#000001' ? null : rteHex(k.fillStyle); } catch (e) { return null; }
+}
+function rteValue(el){
+  if (!el) return '';
+  const lines = [[]], cur = () => lines[lines.length - 1];
+  const walk = (n, st) => {
+    if (n.nodeType === 3) { const t = n.nodeValue.replace(/\u00a0/g, ' ').replace(/[\r\n]+/g, ' '); if (t) cur().push({ t, ...st }); return; }
+    if (n.nodeType !== 1) return;
+    const tag = n.tagName, par = n.parentNode;
+    if (tag === 'BR') { if (!(par !== el && /^(DIV|P|LI)$/.test(par.tagName) && n === par.lastChild)) lines.push([]); return; }
+    const s = { ...st }, cs = n.style || {};
+    if (tag === 'B' || tag === 'STRONG') s.b = true;
+    if (cs.fontWeight) s.b = cs.fontWeight === 'bold' || cs.fontWeight === 'bolder' || Number(cs.fontWeight) >= 600;
+    const col = cs.color || (tag === 'FONT' && n.getAttribute('color')); if (col) { const h = rteHex(col); s.c = h && h !== RTE_INK ? h : null; }
+    if (cs.backgroundColor) s.f = rteHex(cs.backgroundColor);
+    const block = /^(DIV|P|LI|H[1-6])$/.test(tag);
+    if (block && cur().length) lines.push([]);
+    n.childNodes.forEach(k => walk(k, s));
+    if (block) lines.push([]);
+  };
+  el.childNodes.forEach(k => walk(k, { b:false, c:null, f:null }));
+  while (lines.length && !lines[lines.length - 1].length) lines.pop();
+  return richSerialize(lines).replace(/[ \t]+$/gm, '').trim();
+}
+const RTE = { range: null, ed: null };
+document.addEventListener('selectionchange', () => {
+  const s = document.getSelection(); if (!s || !s.rangeCount) return;
+  const n = s.anchorNode, ed = n && (n.nodeType === 1 ? n : n.parentNode).closest && (n.nodeType === 1 ? n : n.parentNode).closest('.rte-ed');
+  if (ed) { RTE.range = s.getRangeAt(0).cloneRange(); RTE.ed = ed; }
+});
+document.addEventListener('mousedown', ev => { if (ev.target.closest && ev.target.closest('[data-rte]')) ev.preventDefault(); }, true);
+document.addEventListener('click', ev => {
+  const b = ev.target.closest && ev.target.closest('[data-rte]'); if (!b) return;
+  ev.preventDefault(); ev.stopPropagation();
+  const ed = b.closest('.rte').querySelector('.rte-ed');
+  if (RTE.ed !== ed || !RTE.range || RTE.range.collapsed) return toast('Primero selecciona el texto que quieres resaltar.', true);
+  ed.focus(); const s = document.getSelection(); s.removeAllRanges(); s.addRange(RTE.range);
+  try { document.execCommand('styleWithCSS', false, true); } catch (e) {}
+  const v = b.dataset.v, cmd = b.dataset.rte;
+  if (cmd === 'bold') document.execCommand('bold');
+  else if (cmd === 'color') document.execCommand('foreColor', false, v || RTE_INK);
+  else if (cmd === 'fondo') { if (!document.execCommand('hiliteColor', false, v || 'transparent')) document.execCommand('backColor', false, v || 'transparent'); }
+  else if (cmd === 'clear') { document.execCommand('removeFormat'); document.execCommand('hiliteColor', false, 'transparent'); document.execCommand('foreColor', false, RTE_INK); if (document.queryCommandState('bold')) document.execCommand('bold'); }
+  ed.dispatchEvent(new Event('input', { bubbles: true }));
+}, true);
+document.addEventListener('paste', ev => {
+  const ed = ev.target.closest && ev.target.closest('.rte-ed'); if (!ed) return;
+  ev.preventDefault(); const t = (ev.clipboardData || window.clipboardData).getData('text/plain'); document.execCommand('insertText', false, t);
+});
 
 /* ---------- celebración ---------- */
 function splash(x, y){
@@ -1098,7 +1259,7 @@ function openEditor(kind, id, preset){
       <label class="f"><span>IVA</span><select id="ed-iva">${[21,10,0].map(v=>`<option value="${v}" ${Number(d.ivaPct)===v?'selected':''}>${v} %</option>`).join('')}</select></label>
       <label class="f"><span>Retención IRPF</span><select id="ed-ret">${[0,1,15].map(v=>`<option value="${v}" ${Number(d.retPct)===v?'selected':''}>${v} %</option>`).join('')}</select></label>
       <p class="foot-note full" style="margin:0">IVA 10 %: reformas en vivienda de un particular si los materiales que aporta el pintor no superan el 40 % del total. Retención 1 %: si tributa en módulos y factura a una empresa o autónomo.</p>
-      <label class="f full"><span>Observaciones (salen en el PDF)</span><textarea id="ed-notas">${esc(d.notas)}</textarea></label>
+      <div class="f full"><span>Observaciones (salen en el PDF)</span>${rteHtml('ed-notas', d.notas, 80)}</div>
     </div>
     <div class="card tot" id="ed-tot" style="margin-top:14px"></div>
   </form>
@@ -1122,7 +1283,7 @@ function collect(st){
   const el = st.el, d = st.d;
   d.lineas = [...el.querySelectorAll('.line')].map(n => ({ concepto:n.querySelector('[data-f=concepto]').value, cantidad:parseNum(n.querySelector('[data-f=cantidad]').value), unidad:n.querySelector('[data-f=unidad]').value, precio:n.querySelector('[data-f=precio]').value===''?'':parseNum(n.querySelector('[data-f=precio]').value) }));
   d.clienteId = el.querySelector('#ed-cli').value; d.obra = el.querySelector('#ed-obra').value.trim(); d.fecha = el.querySelector('#ed-fecha').value;
-  d.ivaPct = Number(el.querySelector('#ed-iva').value); d.retPct = Number(el.querySelector('#ed-ret').value); d.notas = el.querySelector('#ed-notas').value;
+  d.ivaPct = Number(el.querySelector('#ed-iva').value); d.retPct = Number(el.querySelector('#ed-ret').value); d.notas = rteValue(el.querySelector('#ed-notas'));
   const v = el.querySelector('#ed-venc'); if (v) d.vencimiento = v.value;
   const va = el.querySelector('#ed-validez'); if (va) d.validez = Number(parseNum(va.value)) || 30;
   const lu = el.querySelector('#ed-lugar'); if (lu) d.lugar = lu.value.trim();
@@ -1235,7 +1396,7 @@ function renderDetailInto(s){
     <div class="tw"><table class="t"><thead><tr><th>Concepto</th><th class="r">Cant.</th><th class="r">Precio</th><th class="r">Importe</th></tr></thead><tbody>
       ${(d.lineas||[]).map(l=>`<tr><td style="white-space:pre-line">${esc(l.concepto)}</td><td class="r">${fmtQty(parseNum(l.cantidad))} ${esc(l.unidad)}</td><td class="r">${eur(parseNum(l.precio))}</td><td class="r">${eur(lineImporte(l))}</td></tr>`).join('')}</tbody></table></div>
     <div class="tot" style="margin-top:12px">${totHtml(d)}</div>
-    ${d.notas?`<p class="foot-note">${esc(d.notas)}</p>`:''}
+    ${d.notas?`<p class="foot-note rich-note">${richHtml(d.notas)}</p>`:''}
     <div class="actions">${acts}</div>
     ${rel ? '<div style="margin-top:18px">' + rel + '</div>' : ''}
     ${d.enviado?`<p class="foot-note">Enviado por correo a ${esc(d.enviado.a)} el ${fmtDate(d.enviado.fecha)}.</p>`:''}
@@ -1634,7 +1795,7 @@ document.addEventListener('input', ev => { if (ev.target.closest && ev.target.cl
 document.addEventListener('submit', async ev => {
   ev.preventDefault();
   if (ev.target.id !== 'ajustes') return;
-  const d = {}; ['nombre','titular','nif','direccion','cp','poblacion','provincia','tel','email','iban','condiciones','lugar','pie'].forEach(k => d[k] = $('#aj-'+k).value.trim()); d.firmar = $('#aj-firmar').checked;
+  const d = {}; ['nombre','titular','nif','direccion','cp','poblacion','provincia','tel','email','iban','lugar','pie'].forEach(k => d[k] = $('#aj-'+k).value.trim()); d.condiciones = rteValue($('#aj-condiciones')); d.firmar = $('#aj-firmar').checked;
   d.nif = d.nif.toUpperCase(); d.iban = d.iban.toUpperCase();
   d.meta = r2(parseNum($('#aj-meta').value)); d.ivaDef = Number($('#aj-ivaDef').value); d.validez = Number(parseNum($('#aj-validez').value)) || 30; d.vencimiento = Number(parseNum($('#aj-vencimiento').value)) || 30;
   try { await put('config', 'empresa', d); S.ajDirty = false; toast('Datos guardados'); render(); } catch (e) {}
@@ -1730,7 +1891,7 @@ S.introOn = true;
 playIntro(() => { S.introOn = false; if (S.view === 'inicio' && S.ready && !S.animDone) render(); });
 
 /* ---------- avisos de actualización ---------- */
-const APP_VERSION = '2026.10.13-2213';
+const APP_VERSION = '2026.10.30-2357';
 const UPD = { remote: null, notas: '', asked: '' };
 async function checkUpdate(manual){
   if (!/^https?:/.test(location.protocol)) return 'err';
