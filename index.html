@@ -275,6 +275,13 @@ table.t tr.res td{font-weight:800;border-bottom:0;font-family:var(--f-display);f
 .rte-ed{padding:10px 12px;outline:none;line-height:1.55;white-space:pre-wrap;word-break:break-word;background:#fff;color:#212529}
 .rte-hint{font-size:12px;color:var(--muted);padding:4px 12px 7px;border-top:1px dashed var(--line)}
 .rich-note{white-space:normal}
+.rte-sm .rte-bar{padding:5px 7px;gap:4px 8px}
+.rte-sm .rte-sw{width:26px;height:26px;border-radius:7px}
+.rte-sm .rte-sw span{font-size:14px}
+.rte-sm .rte-sw .rte-chip{width:16px;height:16px}
+.rte-sm .rte-btn{min-height:28px;padding:0 8px}
+.rte-sm .rte-lbl{font-size:11px}
+.rte-sm .rte-ed{padding:8px 10px}
 
 .hash{font-size:11.5px;color:var(--muted);overflow-wrap:anywhere;font-family:ui-monospace,Menlo,monospace}
 .checkrow{display:flex;gap:10px;align-items:center;font-weight:600;font-size:15px}
@@ -498,6 +505,14 @@ function richDraw(doc, lines, x, y, size, baseBold, baseColor, lhf){ // y = lín
   return y;
 }
 
+function richColumn(doc, col, texts, width, pad, size, baseBold){ // devuelve opciones para autoTable
+  const lay = texts.map(t => richLayout(doc, [].concat(...richParse(t).map((l, i) => i ? [{ t:'\n' }].concat(l) : l)), width - 2 * pad, size, baseBold));
+  const LH = size * 0.3528 * 1.15;
+  return {
+    didParseCell: h => { if (h.section === 'body' && h.column.index === col) { const n = Math.max(lay[h.row.index].length, 1); h.cell.text = ['']; h.cell.styles.minCellHeight = (n - 1) * LH + size * 0.3528 * 1.05 + 2 * pad; } },
+    didDrawCell: h => { if (h.section === 'body' && h.column.index === col) richDraw(doc, lay[h.row.index], h.cell.x + pad, h.cell.y + pad + size * 0.3528 * 0.82, size, baseBold, h.cell.styles.textColor && h.cell.styles.textColor.length ? h.cell.styles.textColor : [33, 37, 41]); }
+  };
+}
 /* ---------- PDF ---------- */
 const MESES_L = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
 function fechaLarga(s){ if (!s) return ''; const [y, m, d] = s.split('-').map(Number); return d + ' de ' + MESES_L[m - 1] + ' de ' + y; }
@@ -568,20 +583,19 @@ function buildPdf(JsPDF, kind, d, emp, logo, firma) {
     doc.autoTable(Object.assign({}, tableBase, {
       startY: y,
       head: [['Nº', 'PARTIDA / DESCRIPCIÓN', 'IMPORTE']],
-      body: lines.map((l, i) => {
+      body: lines.map((l, i) => [String(i + 1), '', eur(lineImporte(l))]),
+      columnStyles: { 0: { cellWidth: 12, fontStyle: 'bold' }, 1: { cellWidth: W - 2 * M - 48 }, 2: { cellWidth: 36, halign: 'right', fontStyle: 'bold' } }
+    }, richColumn(doc, 1, lines.map(l => {
         const q = parseNum(l.cantidad), lump = q === 1 && (l.unidad === 'partida' || !l.unidad);
-        const med = lump ? '' : '\nMedición: ' + fmtQty(q) + ' ' + (l.unidad || '') + ' × ' + eur(parseNum(l.precio));
-        return [String(i + 1), (l.concepto || '') + med, eur(lineImporte(l))];
-      }),
-      columnStyles: { 0: { cellWidth: 12, fontStyle: 'bold' }, 2: { cellWidth: 36, halign: 'right', fontStyle: 'bold' } }
-    }));
+        return (l.concepto || '') + (lump ? '' : '\nMedición: ' + fmtQty(q) + ' ' + (l.unidad || '') + ' × ' + eur(parseNum(l.precio)));
+      }), W - 2 * M - 48, 3, 9.5, false)));
   } else {
     doc.autoTable(Object.assign({}, tableBase, {
       startY: y,
       head: [['CONCEPTO', 'UNIDADES', 'PRECIO UN.', 'SUBTOTAL']],
-      body: lines.map(l => [l.concepto || '', fmtQty(parseNum(l.cantidad)) + (l.unidad && l.unidad !== 'ud' ? ' ' + l.unidad : ''), eur(parseNum(l.precio)), eur(lineImporte(l))]),
-      columnStyles: { 1: { cellWidth: 26, halign: 'right' }, 2: { cellWidth: 28, halign: 'right' }, 3: { cellWidth: 30, halign: 'right', fontStyle: 'bold' } }
-    }));
+      body: lines.map(l => ['', fmtQty(parseNum(l.cantidad)) + (l.unidad && l.unidad !== 'ud' ? ' ' + l.unidad : ''), eur(parseNum(l.precio)), eur(lineImporte(l))]),
+      columnStyles: { 0: { cellWidth: W - 2 * M - 84 }, 1: { cellWidth: 26, halign: 'right' }, 2: { cellWidth: 28, halign: 'right' }, 3: { cellWidth: 30, halign: 'right', fontStyle: 'bold' } }
+    }, richColumn(doc, 0, lines.map(l => l.concepto || ''), W - 2 * M - 84, 3, 9.5, false)));
   }
   let ty = doc.lastAutoTable.finalY + 8;
   const rows = [['Base imponible', eur(t.base)], ['IVA ' + fmtQty(t.ivaPct) + ' %', eur(t.iva)]];
@@ -1066,17 +1080,18 @@ function richRunHtml(r){
 }
 const richHtml = s => richParse(s).map(l => l.map(richRunHtml).join('')).join('<br>');
 const richEditorHtml = s => richParse(s).map(l => '<div>' + (l.length ? l.map(richRunHtml).join('') : '<br>') + '</div>').join('');
-function rteHtml(id, markup, minH){
+function rteHtml(id, markup, minH, opt){
+  opt = opt || {};
   const sw = (cmd, [n, v]) => cmd === 'color'
     ? `<button type="button" class="rte-sw" data-rte="color" data-v="${v}" title="Letra: ${n}" aria-label="Color de letra: ${n}"><span style="color:${v || 'var(--ink)'}">A</span>${v ? '' : '<i class="rte-x"></i>'}</button>`
     : `<button type="button" class="rte-sw" data-rte="fondo" data-v="${v}" title="Fondo: ${n}" aria-label="Color de fondo: ${n}"><span class="rte-chip" style="background:${v || 'transparent'}"></span>${v ? '' : '<i class="rte-x"></i>'}</button>`;
-  return `<div class="rte"><div class="rte-bar" role="toolbar" aria-label="Formato del texto">
+  return `<div class="rte${opt.compact ? ' rte-sm' : ''}"><div class="rte-bar" role="toolbar" aria-label="Formato del texto">
     <button type="button" class="rte-btn" data-rte="bold" title="Negrita"><b>N</b></button>
     <span class="rte-grp"><span class="rte-lbl">Letra</span>${RTE_COLORS.map(c => sw('color', c)).join('')}</span>
     <span class="rte-grp"><span class="rte-lbl">Fondo</span>${RTE_FONDOS.map(c => sw('fondo', c)).join('')}</span>
     <button type="button" class="rte-btn rte-clear" data-rte="clear" title="Quitar formato">Quitar formato</button></div>
-    <div class="rte-ed" id="${id}" contenteditable="true" spellcheck="true" style="min-height:${minH || 90}px">${richEditorHtml(markup)}</div>
-    <div class="rte-hint">Selecciona el texto y pulsa un botón.</div></div>`;
+    <div class="rte-ed" ${id ? `id="${id}"` : ''} ${opt.attr || ''} contenteditable="true" spellcheck="true" style="min-height:${minH || 90}px">${richEditorHtml(markup)}</div>
+    ${opt.compact ? '' : '<div class="rte-hint">Selecciona el texto y pulsa un botón.</div>'}</div>`;
 }
 function rteHex(c){
   c = String(c || '').trim().toLowerCase(); if (!c || c === 'transparent' || c === 'inherit' || c === 'initial') return null;
@@ -1221,7 +1236,7 @@ function cliOptions(sel){
 }
 function lineHtml(l, i){
   return `<div class="line" data-i="${i}">
-   <label class="f c"><span>Concepto</span><textarea rows="2" style="min-height:48px" data-f="concepto">${esc(l.concepto)}</textarea></label>
+   <div class="f c"><span>Concepto</span>${rteHtml(null, l.concepto, 48, { compact:true, attr:'data-f="concepto"' })}</div>
    <label class="f"><span>Cantidad</span><input inputmode="decimal" data-f="cantidad" value="${esc(String(l.cantidad).replace('.',','))}"></label>
    <label class="f"><span>Unidad</span><select data-f="unidad">${UNIDADES.map(u=>`<option ${u===l.unidad?'selected':''}>${u}</option>`).join('')}</select></label>
    <label class="f"><span>Precio €</span><input inputmode="decimal" data-f="precio" value="${esc(l.precio===''?'':String(l.precio).replace('.',','))}"></label>
@@ -1282,7 +1297,7 @@ function totHtml(d){
 }
 function collect(st){
   const el = st.el, d = st.d;
-  d.lineas = [...el.querySelectorAll('.line')].map(n => ({ concepto:n.querySelector('[data-f=concepto]').value, cantidad:parseNum(n.querySelector('[data-f=cantidad]').value), unidad:n.querySelector('[data-f=unidad]').value, precio:n.querySelector('[data-f=precio]').value===''?'':parseNum(n.querySelector('[data-f=precio]').value) }));
+  d.lineas = [...el.querySelectorAll('.line')].map(n => ({ concepto:rteValue(n.querySelector('[data-f=concepto]')), cantidad:parseNum(n.querySelector('[data-f=cantidad]').value), unidad:n.querySelector('[data-f=unidad]').value, precio:n.querySelector('[data-f=precio]').value===''?'':parseNum(n.querySelector('[data-f=precio]').value) }));
   d.clienteId = el.querySelector('#ed-cli').value; d.obra = el.querySelector('#ed-obra').value.trim(); d.fecha = el.querySelector('#ed-fecha').value;
   d.ivaPct = Number(el.querySelector('#ed-iva').value); d.retPct = Number(el.querySelector('#ed-ret').value); d.notas = rteValue(el.querySelector('#ed-notas'));
   const v = el.querySelector('#ed-venc'); if (v) d.vencimiento = v.value;
@@ -1395,7 +1410,7 @@ function renderDetailInto(s){
       <div style="font-weight:600;font-size:14px;opacity:.8">${fmtDate(d.fecha)}${isF&&d.vencimiento?', vence el '+fmtDate(d.vencimiento):''}${!isF?', válido '+(d.validez||30)+' días':''}</div></div>
     ${c.nif||c.email||c.tel||d.refFactura?`<div class="card" style="margin-bottom:12px"><div class="kv">${c.nif?`<dt>NIF</dt><dd>${esc(c.nif)}</dd>`:''}${c.email?`<dt>Email</dt><dd>${esc(c.email)}</dd>`:''}${c.tel?`<dt>Teléfono</dt><dd>${esc(c.tel)}</dd>`:''}${d.refFactura?`<dt>Rectifica</dt><dd>${esc(d.refFactura.numero)} (${fmtDate(d.refFactura.fecha)})${d.motivo?'. '+esc(d.motivo):''}</dd>`:''}</div></div>`:''}
     <div class="tw"><table class="t"><thead><tr><th>Concepto</th><th class="r">Cant.</th><th class="r">Precio</th><th class="r">Importe</th></tr></thead><tbody>
-      ${(d.lineas||[]).map(l=>`<tr><td style="white-space:pre-line">${esc(l.concepto)}</td><td class="r">${fmtQty(parseNum(l.cantidad))} ${esc(l.unidad)}</td><td class="r">${eur(parseNum(l.precio))}</td><td class="r">${eur(lineImporte(l))}</td></tr>`).join('')}</tbody></table></div>
+      ${(d.lineas||[]).map(l=>`<tr><td>${richHtml(l.concepto)}</td><td class="r">${fmtQty(parseNum(l.cantidad))} ${esc(l.unidad)}</td><td class="r">${eur(parseNum(l.precio))}</td><td class="r">${eur(lineImporte(l))}</td></tr>`).join('')}</tbody></table></div>
     <div class="tot" style="margin-top:12px">${totHtml(d)}</div>
     ${d.notas?`<p class="foot-note rich-note">${richHtml(d.notas)}</p>`:''}
     <div class="actions">${acts}</div>
@@ -1745,10 +1760,10 @@ document.addEventListener('click', async ev => {
       const c = b.dataset.c != null ? CONCEPTOS[Number(b.dataset.c)] : ['', 'm²'];
       const box = st.el.querySelector('#ed-lines'); const i = box.children.length;
       const first = box.querySelector('.line'); // reutiliza la primera línea si está vacía
-      if (first && box.children.length === 1 && !first.querySelector('[data-f=concepto]').value.trim() && c[0]) { first.querySelector('[data-f=concepto]').value = c[0]; first.querySelector('[data-f=unidad]').value = c[1]; first.querySelector('[data-f=cantidad]').focus(); }
+      if (first && box.children.length === 1 && !rteValue(first.querySelector('[data-f=concepto]')) && c[0]) { first.querySelector('[data-f=concepto]').innerHTML = richEditorHtml(c[0]); first.querySelector('[data-f=unidad]').value = c[1]; first.querySelector('[data-f=cantidad]').focus(); }
       else { box.insertAdjacentHTML('beforeend', lineHtml({ concepto:c[0], cantidad:1, unidad:c[1], precio:'' }, i)); const n = box.lastElementChild; n.querySelector(c[0] ? '[data-f=cantidad]' : '[data-f=concepto]').focus(); n.scrollIntoView({ block:'nearest' }); }
       st.upd(); break; }
-    case 'rm-line': { const box = st.el.querySelector('#ed-lines'); if (box.children.length > 1) b.closest('.line').remove(); else box.querySelectorAll('input,textarea').forEach(x=>x.value=''); st.upd(); break; }
+    case 'rm-line': { const box = st.el.querySelector('#ed-lines'); if (box.children.length > 1) b.closest('.line').remove(); else { box.querySelectorAll('input,textarea').forEach(x=>x.value=''); box.querySelectorAll('.rte-ed').forEach(x=>x.innerHTML='<div><br></div>'); } st.upd(); break; }
     case 'save-ed': saveEditor(st); break;
     case 'edit-doc': if (doc) openEditor(det.k, doc.id); break;
     case 'del-doc':
@@ -1892,7 +1907,7 @@ S.introOn = true;
 playIntro(() => { S.introOn = false; if (S.view === 'inicio' && S.ready && !S.animDone) render(); });
 
 /* ---------- avisos de actualización ---------- */
-const APP_VERSION = '2026.10.31-0000';
+const APP_VERSION = '2026.10.31-0006';
 const UPD = { remote: null, notas: '', asked: '' };
 async function checkUpdate(manual){
   if (!/^https?:/.test(location.protocol)) return 'err';
