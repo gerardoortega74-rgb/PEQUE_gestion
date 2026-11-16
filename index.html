@@ -275,6 +275,11 @@ table.t tr.res td{font-weight:800;border-bottom:0;font-family:var(--f-display);f
 .rte-ed{padding:10px 12px;outline:none;line-height:1.55;white-space:pre-wrap;word-break:break-word;background:#fff;color:#212529}
 .rte-hint{font-size:12px;color:var(--muted);padding:4px 12px 7px;border-top:1px dashed var(--line)}
 .rich-note{white-space:normal}
+.chip small{font-weight:600;opacity:.75;margin-left:4px}
+.sf-send{flex-wrap:wrap}
+.sf-send .btn{flex:1 1 30%;min-width:120px}
+.sf-send [data-act=gmail-send]{flex-basis:100%}
+@media(min-width:700px){.sf-send [data-act=gmail-send]{flex-basis:30%}}
 .rte-sm .rte-bar{padding:5px 7px;gap:4px 8px}
 .rte-sm .rte-sw{width:26px;height:26px;border-radius:7px}
 .rte-sm .rte-sw span{font-size:14px}
@@ -798,7 +803,7 @@ function renderNav(){
   const h = `<div class="side-brand"><img src="${LOGO}" alt="PEQUE pintura y decoración"></div>` + NAV.map(([k,l]) => k === 'fab'
     ? `<div class="fabwrap"><button class="fab" data-act="create" aria-label="Crear presupuesto, factura o gasto"><svg class="i" viewBox="0 0 24 24">${IC.plus}</svg><span>Crear</span></button></div>`
     : `<button class="nv" data-act="go" data-v="${k}" ${cur===k?'aria-current="page"':''}><svg class="i" viewBox="0 0 24 24">${IC[k]}</svg>${l}</button>`).join('')
-    + `<button class="nv side-only" data-act="go" data-v="mas" ${['mas','clientes','impuestos','ajustes'].includes(cur)?'aria-current="page"':''}><svg class="i" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="19" cy="12" r="1.4"/></svg>Más</button>`
+    + `<button class="nv side-only" data-act="go" data-v="mas" ${['mas','clientes','impuestos','ajustes','catalogo'].includes(cur)?'aria-current="page"':''}><svg class="i" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="19" cy="12" r="1.4"/></svg>Más</button>`
     + `<button class="nv-ver" data-act="buscar-upd" title="Buscar actualizaciones">Versión ${esc(APP_VERSION)}</button>`;
   if ($('#nav').innerHTML !== h) $('#nav').innerHTML = h;
 }
@@ -866,6 +871,7 @@ const DIAS = ['domingo','lunes','martes','miércoles','jueves','viernes','sábad
 function render(){
   renderNav(); renderYears();
   if (S.view === 'ajustes' && S.ajDirty && document.getElementById('ajustes')) { S.stack.forEach(s => { if (s.kind === 'detail' && s.el) renderDetailInto(s); }); return; }
+  if (S.view === 'catalogo' && S.catDirty && document.getElementById('cat-form')) { S.stack.forEach(s => { if (s.kind === 'detail' && s.el) renderDetailInto(s); }); return; }
   const v = S.view; let h = '';
   const animate = S.ready && v === 'inicio' && !S.animDone && !S.introOn;
   S.animNow = animate;
@@ -875,7 +881,7 @@ function render(){
   else if (S.authState === 'loading') h = `<div class="empty" style="margin-top:24px"><span class="dot"></span><b>Abriendo PEQUE Gestión</b></div>`;
   else if (S.denied) h = `<div class="empty" style="margin-top:24px"><span class="dot"></span><b>Esta cuenta no tiene permiso</b>Pide a Gerardo que añada tu usuario a la lista de acceso.<button class="btn" data-act="logout" style="margin-top:10px">Cerrar sesión</button></div>`;
   else if (!S.ready) h = S.offline ? offlineHtml() : `<div class="empty" style="margin-top:24px"><span class="dot"></span><b>Cargando datos</b>Conectando con la base de datos de PEQUE.</div>`;
-  else h = ({ inicio:vInicio, presupuestos:vPres, facturas:vFac, gastos:vGastos, mas:vMas, clientes:vClientes, impuestos:vImpuestos, ajustes:vAjustes })[v]();
+  else h = ({ inicio:vInicio, presupuestos:vPres, facturas:vFac, gastos:vGastos, mas:vMas, clientes:vClientes, impuestos:vImpuestos, ajustes:vAjustes, catalogo:vCatalogo })[v]();
   if (S.ready && !S.canWrite) h = `<div class="banner">Tienes acceso de solo lectura. Pide al propietario que te comparta la app como Editor.</div>` + h;
   $('#view').classList.toggle('anim', animate);
   $('#view').innerHTML = h;
@@ -899,14 +905,14 @@ function offlineHtml(){ return `<div class="empty" style="margin-top:24px"><span
 function vInicio(){
   const y = S.year, e = emp(), fs = emitidas(S.facturas).filter(f => yearOf(f.fecha) === y);
   let fact = 0, factIva = 0, cobr = 0; const fm = Array(12).fill(0), gm = Array(12).fill(0);
-  fs.forEach(f => { const t = totals(f); fact = r2(fact + t.base); factIva = r2(factIva + t.total); fm[Number(f.fecha.slice(5,7))-1] += t.base; if (f.estado === 'cobrada') cobr = r2(cobr + t.total); });
+  fs.forEach(f => { const t = totals(f); fact = r2(fact + t.base); factIva = r2(factIva + t.total); fm[Number(f.fecha.slice(5,7))-1] += t.base; cobr = r2(cobr + cobrado(f)); });
   let gas = 0; S.gastos.filter(g => yearOf(g.fecha) === y && g.deducible !== false).forEach(g => { gas = r2(gas + (Number(g.base)||0)); gm[Number(g.fecha.slice(5,7))-1] += Number(g.base)||0; });
-  const pend = emitidas(S.facturas).filter(f => f.estado !== 'cobrada' && totals(f).total > 0).sort((a,b)=>(a.vencimiento||a.fecha).localeCompare(b.vencimiento||b.fecha));
-  const pendTot = r2(pend.reduce((a,f)=>a+totals(f).total,0)), venc = pend.filter(f => estadoFactura(f) === 'vencida').length;
+  const pend = emitidas(S.facturas).filter(f => f.estado !== 'cobrada' && pendienteDe(f) > 0.005).sort((a,b)=>(a.vencimiento||a.fecha).localeCompare(b.vencimiento||b.fecha));
+  const pendTot = r2(pend.reduce((a,f)=>a+pendienteDe(f),0)), venc = pend.filter(f => estadoFactura(f) === 'vencida').length;
   const q = y === now.getFullYear() ? quarterOf(todayISO()) : 4;
   const iv = iva303(S.facturas, S.gastos, y, q), ir = irpf130(S.facturas, S.gastos, y, q);
   const espera = S.presupuestos.filter(p => p.estado === 'enviado').sort(sortDesc);
-  const enJuego = r2(espera.reduce((a,p)=>a+totals(p).total,0));
+  const enJuego = r2(espera.reduce((a,p)=>a+totals(p).total,0)), aSeguir = espera.filter(p => (seguimiento(p)||{}).seguir).length;
   const meta = Number(e.meta) || 0;
   const p = meta ? Math.min(1, fact / meta) : (factIva ? Math.min(1, cobr / factIva) : 0);
   const falta = [!e.nif && 'NIF', !e.iban && 'IBAN', !e.direccion && 'dirección'].filter(Boolean);
@@ -929,7 +935,7 @@ function vInicio(){
     <button class="tile ${venc?'alert':''}" data-act="go-fac" data-v="${venc?'vencida':'pendiente'}"><div class="l">Por cobrar</div><div class="v">${eur(pendTot)}</div><div class="h">${pend.length ? pend.length + (pend.length===1?' factura':' facturas') + (venc ? ', ' + venc + (venc===1?' vencida':' vencidas') : '') : 'Todo cobrado'}</div></button>
     <button class="tile" data-act="go" data-v="impuestos"><div class="l">Impuestos ${q}T</div><div class="v">${eur(Math.max(0,iv.resultado) + ir.aIngresar)}</div><div class="h">IVA ${eur(iv.resultado)}, IRPF ${eur(ir.aIngresar)}. Plazo del ${PLAZOS[q]}.</div></button>
     <div class="tile"><div class="l">Beneficio ${y}</div><div class="v">${eur(fact - gas)}</div><div class="h">Facturado ${eur(fact)} menos gastos ${eur(gas)}</div></div>
-    <button class="tile" data-act="go-pre" data-v="enviado"><div class="l">Presupuestos en el aire</div><div class="v">${espera.length}</div><div class="h">${espera.length ? eur(enJuego) + ' esperando respuesta' : 'Ninguno pendiente de respuesta'}</div></button>
+    <button class="tile ${aSeguir?'alert':''}" data-act="go-pre" data-v="enviado"><div class="l">Presupuestos en el aire</div><div class="v">${espera.length}</div><div class="h">${espera.length ? eur(enJuego) + ' esperando respuesta' + (aSeguir ? '. <b>' + aSeguir + (aSeguir === 1 ? ' para llamar o recordar' : ' para llamar o recordar') + '</b>' : '') : 'Ninguno pendiente de respuesta'}</div></button>
     <div class="tile chart"><div class="row"><h2 style="margin:0;flex:1">Mes a mes</h2><div class="legend"><span><i style="background:var(--bar-a)"></i>Facturado</span><span><i style="background:var(--bar-b)"></i>Gastos</span></div></div>
       ${barsSvg(fm, gm)}<div class="h">${fact ? 'Mejor mes: ' + MESES[best] + ', con ' + eur(fm[best]) + ' facturados.' : 'Cuando emitas facturas verás aquí cómo va el año.'}</div></div>
   </div>
@@ -949,7 +955,8 @@ function chip(d, k, sub, right, extra = ''){
 function presItem(p){
   const t = totals(p), e = p.estado || 'borrador';
   const a = facturasDe(p.id).length ? avancePres(p) : null;
-  const sub = esc(p.obra || fmtDate(p.fecha)) + (a ? ` <span style="color:var(--green-ink);font-weight:700">· facturado ${a.pct} %</span>` : '');
+  const sg = seguimiento(p);
+  const sub = (sg ? segTxt(sg) : esc(p.obra || fmtDate(p.fecha))) + (a ? ` <span style="color:var(--green-ink);font-weight:700">· facturado ${a.pct} %</span>` : '');
   return chip(p, 'presupuesto', sub, `<b>${eur(t.total)}</b>${pill(e)}`);
 }
 function facItem(f, cobrarBtn){
@@ -957,8 +964,9 @@ function facItem(f, cobrarBtn){
   let sub = fmtDate(f.fecha);
   if (e === 'vencida') sub = `<span style="color:var(--bad);font-weight:700">Vencida hace ${daysBetween(f.vencimiento, todayISO())} días</span>`;
   else if (e === 'pendiente' && f.vencimiento) sub = `Vence el ${fmtDate(f.vencimiento)}`;
+  if (f.estado !== 'cobrada' && cobrado(f) > 0) sub += ` · <b>quedan ${eur(pendienteDe(f))}</b>`;
   if (f.presupuestoId) { const p = byId('presupuestos', f.presupuestoId); if (p) sub += ` · <span style="color:var(--green-ink);font-weight:700">${esc(p.numero)}</span>`; }
-  const btn = cobrarBtn && S.canWrite ? `<button class="btn sm pri" data-act="cobrar" data-id="${f.id}">Cobrada</button>` : pill(e);
+  const btn = cobrarBtn && S.canWrite ? `<button class="btn sm pri" data-act="cobrar" data-id="${f.id}">Cobrar</button>` : pill(e);
   return chip(f, 'factura', sub, `<b>${eur(t.total)}</b>`, btn);
 }
 function match(d){ const q = S.buscar.trim().toLowerCase(); if (!q) return true; return [d.numero, cliName(d), d.obra].join(' ').toLowerCase().includes(q); }
@@ -1002,7 +1010,8 @@ function vMas(){
   const it = (v, t, s, col, icon) => `<button class="chipcard" data-act="go" data-v="${v}" style="--sw:${col}"><span class="sw" style="justify-content:center;align-items:center"><svg class="i" viewBox="0 0 24 24" style="width:26px;height:26px;stroke:#1A1C14">${icon}</svg></span><span class="main"><span class="t">${t}</span><span class="s">${s}</span></span></button>`;
   return `<h1 class="view">Más</h1><div class="card section"><div class="row"><span style="flex:1">Versión de la app<br><b class="num">${esc(APP_VERSION)}</b></span><button class="btn sm" data-act="buscar-upd">Buscar actualizaciones</button></div></div><div class="list">
   ${it('clientes','Clientes', S.clientes.length + (S.clientes.length===1?' cliente guardado':' clientes guardados'), WHEEL[5], '<circle cx="9" cy="8" r="4"/><path d="M2 21c0-4 3-6 7-6s7 2 7 6M17 11a3 3 0 1 0 0-6M22 21c0-3-2-5-5-5"/>')}
-  ${it('impuestos','Impuestos y libros','IVA trimestral (303), IRPF (130) y libros en CSV', WHEEL[1], '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>')}
+  ${it('catalogo','Catálogo de precios','Trabajos con su precio para rellenar presupuestos más rápido', WHEEL[3], '<path d="M4 4h16v16H4z"/><path d="M8 9h8M8 13h8M8 17h5"/>')}
+  ${it('impuestos','Impuestos y libros','IVA (303 y 390), IRPF (130), modelo 347 y libros en Excel', WHEEL[1], '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>')}
   ${it('ajustes','Datos de la empresa y sesión','NIF, dirección, IBAN, objetivo anual, copias y cerrar sesión', WHEEL[8], '<path d="M4 21V8l8-5 8 5v13"/><path d="M9 21v-6h6v6"/>')}
   <button class="chipcard" data-act="logout" style="--sw:var(--idle-bg)"><span class="sw" style="justify-content:center;align-items:center"><svg class="i" viewBox="0 0 24 24" style="width:26px;height:26px;stroke:var(--ink)"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/></svg></span><span class="main"><span class="t">Salir</span><span class="s">Cerrar sesión en este dispositivo</span></span></button></div>`;
 }
@@ -1043,8 +1052,11 @@ function vImpuestos(){
     <tr class="res"><td>A ingresar</td><td class="r">${eur(ir.aIngresar)}</td></tr></tbody></table></div>
     <p class="foot-note">Cálculo orientativo en estimación directa con las facturas emitidas y los gastos apuntados. Revísalo con tu gestor antes de presentar.</p>
   </div>
+  ${iva390Html(y)}
+  ${m347Html(y)}
   <h2>Libros registro</h2>
   <div class="actions" style="margin-top:0">
+   <button class="btn pri wide" data-act="excel">Libros, IVA, IRPF y 347 de ${y} en Excel</button>
    <button class="btn" data-act="csv-fac">Facturas emitidas ${y} (CSV)</button>
    <button class="btn" data-act="csv-gas">Gastos ${y} (CSV)</button></div>`;
 }
@@ -1065,6 +1077,7 @@ function vAjustes(){
   </div>
   <div class="row" style="margin-top:14px"><button class="btn pri" type="submit" ${S.canWrite?'':'disabled'}>Guardar datos</button></div></form>
   ${backupCard()}
+  ${copiasHtml()}
   <div class="card section" style="margin-top:14px"><h2>Facturación y Verifactu</h2>
    <p class="muted" style="margin:0">Las facturas se numeran de forma correlativa por año (F2026-001, F2026-002…). Una vez emitidas no se pueden editar ni borrar, y cada una guarda una huella encadenada con la anterior. Para corregir una factura emitida usa “Rectificar”. Desde el 1 de julio de 2027 los autónomos deberán facturar con un programa adaptado a Verifactu (envío a la AEAT y código QR); esta app todavía no lo hace.</p></div>`;
 }
@@ -1269,7 +1282,7 @@ function openEditor(kind, id, preset){
     </div>
     <h2 style="margin:18px 0 8px">Trabajos</h2>
     <div class="lines" id="ed-lines">${d.lineas.map(lineHtml).join('')}</div>
-    <div class="chips">${CONCEPTOS.map((c,i)=>`<button type="button" class="chip" data-act="add-line" data-c="${i}">+ ${esc(c[0].split('\n')[0])}</button>`).join('')}</div>
+    <div class="chips">${catalogo().map((c,i)=>`<button type="button" class="chip" data-act="add-line" data-c="${i}">+ ${esc(catTitulo(c))}${c.precio!==''&&c.precio!=null?' <small>'+eur(c.precio)+'/'+esc(c.unidad)+'</small>':''}</button>`).join('')}</div>
     <button type="button" class="btn" style="width:100%;margin-top:8px" data-act="add-line">+ Línea en blanco</button>
     <div class="fgrid" style="margin-top:16px">
       <label class="f"><span>IVA</span><select id="ed-iva">${[21,10,0].map(v=>`<option value="${v}" ${Number(d.ivaPct)===v?'selected':''}>${v} %</option>`).join('')}</select></label>
@@ -1387,9 +1400,9 @@ function renderDetailInto(s){
   const W = S.canWrite; let acts = '';
   if (isF) {
     if (d.estado === 'borrador') acts = `<button class="btn pri wide" data-act="emitir" ${W?'':'disabled'}>Emitir factura (asigna número)</button><button class="btn" data-act="edit-doc" ${W?'':'disabled'}>Editar</button><button class="btn" data-act="pdf">Ver PDF borrador</button><button class="btn danger wide" data-act="del-doc" ${W?'':'disabled'}>Borrar borrador</button>`;
-    else acts = `<button class="btn pri wide" data-act="send">Enviar por correo</button><button class="btn" data-act="pdf">Descargar PDF</button>${d.estado==='cobrada'?`<button class="btn" data-act="descobrar" ${W?'':'disabled'}>Marcar pendiente</button>`:`<button class="btn" data-act="cobrar" data-id="${d.id}" ${W?'':'disabled'}>Marcar cobrada</button>`}${d.serie!=='R'?`<button class="btn wide" data-act="rectificar" ${W?'':'disabled'}>Rectificar factura</button>`:''}<button class="btn wide" data-act="relacionar" ${W?'':'disabled'}>${d.presupuestoId ? 'Cambiar presupuesto relacionado' : 'Relacionar con un presupuesto'}</button>`;
+    else acts = `<button class="btn pri wide" data-act="send">Enviar por correo</button><button class="btn" data-act="pdf">Descargar PDF</button>${d.estado!=='cobrada'&&totals(d).total>0?`<button class="btn" data-act="cobrar" data-id="${d.id}" ${W?'':'disabled'}>Registrar cobro</button><button class="btn" data-act="recordar-cobro">Recordar el pago</button>`:''}${d.estado==='cobrada'||cobrosDe(d).length?`<button class="btn" data-act="descobrar" ${W?'':'disabled'}>Deshacer cobros</button>`:''}${d.serie!=='R'?`<button class="btn wide" data-act="rectificar" ${W?'':'disabled'}>Rectificar factura</button>`:''}<button class="btn wide" data-act="relacionar" ${W?'':'disabled'}>${d.presupuestoId ? 'Cambiar presupuesto relacionado' : 'Relacionar con un presupuesto'}</button>`;
   } else {
-    acts = `<button class="btn pri wide" data-act="send">Enviar por correo</button><button class="btn" data-act="pdf">Descargar PDF</button><button class="btn" data-act="edit-doc" ${W?'':'disabled'}>Editar</button>
+    acts = `${e==='enviado'?'<button class="btn pri wide" data-act="seguir">Recordar al cliente</button>':''}<button class="btn ${e==='enviado'?'':'pri '}wide" data-act="send">${e==='enviado'?'Volver a enviar':'Enviar por correo'}</button><button class="btn" data-act="pdf">Descargar PDF</button><button class="btn" data-act="edit-doc" ${W?'':'disabled'}>Editar</button>
       ${e!=='aceptado'&&e!=='facturado'?`<button class="btn" data-act="pres-estado" data-v="aceptado" ${W?'':'disabled'}>Aceptado</button>`:''}${e!=='rechazado'&&e!=='facturado'?`<button class="btn" data-act="pres-estado" data-v="rechazado" ${W?'':'disabled'}>Rechazado</button>`:''}
       ${avancePres(d).pend > 0.01 && e!=='rechazado'?`<button class="btn wide" data-act="to-factura" ${W?'':'disabled'}>${avancePres(d).fac ? 'Facturar lo pendiente o un anticipo' : 'Convertir en factura'}</button>`:''}
       <button class="btn" data-act="dup" ${W?'':'disabled'}>Duplicar</button><button class="btn danger" data-act="del-doc" ${W?'':'disabled'}>Borrar</button>`;
@@ -1416,7 +1429,9 @@ function renderDetailInto(s){
     <div class="actions">${acts}</div>
     ${rel ? '<div style="margin-top:18px">' + rel + '</div>' : ''}
     ${d.enviado?`<p class="foot-note">Enviado por correo a ${esc(d.enviado.a)} el ${fmtDate(d.enviado.fecha)}.</p>`:''}
-    ${isF&&d.estado==='cobrada'&&d.fechaCobro?`<p class="foot-note">Cobrada el ${fmtDate(d.fechaCobro)}.</p>`:''}
+    ${isF&&cobrosDe(d).length?`<p class="foot-note">Cobros: ${cobrosDe(d).map(c=>fmtDate(c.fecha)+' '+eur(c.importe)).join(', ')}.${d.estado!=='cobrada'?' <b>Queda pendiente '+eur(pendienteDe(d))+'.</b>':''}</p>`:isF&&d.estado==='cobrada'&&d.fechaCobro?`<p class="foot-note">Cobrada el ${fmtDate(d.fechaCobro)}.</p>`:''}
+    ${(d.recordatorios||[]).length?`<p class="foot-note">Recordatorio${d.recordatorios.length>1?'s':''} enviado${d.recordatorios.length>1?'s':''}: ${d.recordatorios.map(fmtDate).join(', ')}.</p>`:''}
+    ${!isF&&seguimiento(d)?`<p class="foot-note">${segTxt(seguimiento(d))}.</p>`:''}
     ${isF&&d.huella?`<p class="foot-note">Huella del registro (encadenada con la factura anterior):<br><span class="hash">${esc(d.huella)}</span></p>`:''}
   </div>`;
 }
@@ -1453,22 +1468,23 @@ async function savePdf(k, d){
   try { await S.dl.save({ filename: pdfName(k, d), data: doc.output('blob') }); toast('PDF guardado en Descargas'); }
   catch (e) { if (e && e.code === 'declined') return; toast(e && e.code === 'rate_limited' ? 'Ya hay una descarga abierta. Ciérrala e inténtalo de nuevo.' : 'No se pudo descargar el PDF.', true); }
 }
-function openSend(k, d){
+function openSend(k, d, modo){
   const e = emp(), c = d.cliente || {};
   const isP = k === 'presupuesto', nom = isP ? 'presupuesto' : (d.serie==='R'?'factura rectificativa':'factura');
-  const subj = `${isP?'Presupuesto':'Factura'} ${d.numero||''} - ${e.nombre}`;
-  const body = `Hola${c.nombre?' '+c.nombre.split(' ')[0]:''},\n\nTe adjunto el ${nom} ${d.numero||''}${d.obra?' de la obra '+d.obra:''} por un total de ${eur(totals(d).total)}.${!isP && e.iban && totals(d).total>0?'\n\nPuedes pagarlo por transferencia a la cuenta '+e.iban+(d.vencimiento?' antes del '+fmtDate(d.vencimiento):'')+'.':''}${isP?'\n\nSi estás de acuerdo, respóndeme a este correo o llámame y lo organizamos.':''}\n\nUn saludo,\n${e.titular}\n${e.nombre}\nTel. ${e.tel}`;
+  const tpl = modo ? plantilla(k, d, modo) : null;
+  const subj = tpl ? tpl.subj : `${isP?'Presupuesto':'Factura'} ${d.numero||''} - ${e.nombre}`;
+  const body = tpl ? tpl.body : `Hola${c.nombre?' '+c.nombre.split(' ')[0]:''},\n\nTe adjunto el ${nom} ${d.numero||''}${d.obra?' de la obra '+d.obra:''} por un total de ${eur(totals(d).total)}.${!isP && e.iban && totals(d).total>0?'\n\nPuedes pagarlo por transferencia a la cuenta '+e.iban+(d.vencimiento?' antes del '+fmtDate(d.vencimiento):'')+'.':''}${isP?'\n\nSi estás de acuerdo, respóndeme a este correo o llámame y lo organizamos.':''}\n\nUn saludo,\n${e.titular}\n${e.nombre}\nTel. ${e.tel}`;
   let canShare = false; try { canShare = !!(navigator.canShare && navigator.canShare({ files:[new File(['x'],'x.pdf',{type:'application/pdf'})] })); } catch (err) {}
-  const html = shHead('Enviar ' + nom) + `<form class="sb" id="snd" novalidate><div class="fgrid">
+  const html = shHead(modo === 'cobro' ? 'Recordar el pago' : modo === 'seguir' ? 'Recordar el presupuesto' : 'Enviar ' + nom) + `<form class="sb" id="snd" novalidate><div class="fgrid">
     <label class="f full"><span>Para</span><input id="sd-to" type="email" inputmode="email" value="${esc(c.email||'')}" placeholder="correo@cliente.com"></label>
     <label class="f full"><span>Asunto</span><input id="sd-subj" value="${esc(subj)}"></label>
     <label class="f full"><span>Mensaje</span><textarea id="sd-body" rows="9" style="min-height:190px">${esc(body)}</textarea></label></div>
     <div class="card" style="margin-top:14px"><b>Cómo se envía</b>
-      <p class="muted" style="margin:6px 0 0">${canShare ? '“Compartir PDF” abre tu correo, WhatsApp u otra app con el PDF ya adjunto. ' : ''}“Abrir correo” guarda el PDF en Descargas y abre tu programa de correo con el mensaje escrito: arrastra el PDF “${esc(pdfName(k,d))}” al correo y pulsa Enviar.</p></div>
+      <p class="muted" style="margin:6px 0 0">“Enviar con Gmail” lo manda directamente desde ${GM.email ? '<b>' + esc(GM.email) + '</b>' : 'tu cuenta de Gmail'} con el PDF adjunto (la primera vez Google te pedirá permiso). ${canShare ? '“Compartir PDF” abre tu correo, WhatsApp u otra app con el PDF ya adjunto. ' : ''}“Abrir correo” guarda el PDF en Descargas y abre tu programa de correo con el mensaje escrito: arrastra el PDF “${esc(pdfName(k,d))}” al correo y pulsa Enviar.</p></div>
     <div id="sd-done" hidden class="banner info" style="margin-top:14px"><span style="flex:1">¿Ya has enviado el correo?</span><button type="button" class="btn sm pri" data-act="sent-ok">Sí, marcar como enviado</button></div>
   </form>
-  <div class="sf">${canShare ? '<button class="btn" data-act="share-pdf">Compartir PDF</button>' : '<button class="btn" data-act="pdf-send">Guardar PDF</button>'}<button class="btn pri" data-act="do-send">Abrir correo</button></div>`;
-  pushSheet({ kind:'form', html, k, docId:d.id, col: k==='factura'?'facturas':'presupuestos' });
+  <div class="sf sf-send">${canShare ? '<button class="btn" data-act="share-pdf">Compartir PDF</button>' : '<button class="btn" data-act="pdf-send">Guardar PDF</button>'}<button class="btn" data-act="do-send">Abrir correo</button><button class="btn pri" data-act="gmail-send">Enviar con Gmail</button></div>`;
+  pushSheet({ kind:'form', html, k, modo, docId:d.id, col: k==='factura'?'facturas':'presupuestos' });
 }
 function sendFields(st){
   const el = st.el;
@@ -1495,10 +1511,10 @@ async function sharePdf(st){
 }
 async function markSent(st){
   const d = byId(st.col, st.docId); if (!d) return;
-  const upd = { enviado: { a: st.sentTo || 'cliente', fecha: todayISO() } };
-  if (st.k === 'presupuesto' && (d.estado||'borrador') === 'borrador') upd.estado = 'enviado';
+  const upd = st.modo ? { recordatorios: (d.recordatorios || []).concat([todayISO()]), recordado: todayISO() } : { enviado: { a: st.sentTo || 'cliente', fecha: todayISO() } };
+  if (!st.modo && st.k === 'presupuesto' && ['borrador','enviado'].includes(d.estado||'borrador')) { upd.estado = 'enviado'; upd.recordado = null; }
   if (d.clienteId && st.sentTo && st.sentTo.includes('@') && !(byId('clientes', d.clienteId)||{}).email) patch('clientes', d.clienteId, { email: st.sentTo.split(/[,;\s]+/)[0] }).catch(()=>{});
-  try { await patch(st.col, d.id, upd); popSheet(); celebrate('Marcado como enviado'); } catch (e) {}
+  try { await patch(st.col, d.id, upd); popSheet(); if (st.via !== 'gmail') celebrate(st.modo ? 'Recordatorio apuntado' : 'Marcado como enviado'); } catch (e) {}
 }
 
 /* ---------- gastos y clientes ---------- */
@@ -1743,7 +1759,7 @@ document.addEventListener('click', async ev => {
     case 'create': openCreate(); break;
     case 'go-fac': closeAll(); S.view = 'facturas'; S.fFac = b.dataset.v; S.buscar = ''; render(); window.scrollTo(0,0); break;
     case 'go-pre': closeAll(); S.view = 'presupuestos'; S.fPre = b.dataset.v; S.buscar = ''; render(); window.scrollTo(0,0); break;
-    case 'go': closeAll(); S.ajDirty = false; S.view = b.dataset.v; S.buscar = ''; render(); window.scrollTo(0,0); break;
+    case 'go': closeAll(); S.ajDirty = false; S.catDirty = false; S.view = b.dataset.v; S.buscar = ''; render(); window.scrollTo(0,0); break;
     case 'close': popSheet(); break;
     case 'fpre': S.fPre = b.dataset.v; render(); break;
     case 'ffac': S.fFac = b.dataset.v; render(); break;
@@ -1757,11 +1773,12 @@ document.addEventListener('click', async ev => {
     case 'edit-cli': openCliente(b.dataset.id); break;
     case 'open': openDetail(b.dataset.k, b.dataset.id); break;
     case 'add-line': {
-      const c = b.dataset.c != null ? CONCEPTOS[Number(b.dataset.c)] : ['', 'm²'];
+      const ci = b.dataset.c != null ? catalogo()[Number(b.dataset.c)] : null;
+      const c = ci ? [ci.concepto, ci.unidad, ci.precio == null ? '' : ci.precio] : ['', 'm²', ''];
       const box = st.el.querySelector('#ed-lines'); const i = box.children.length;
       const first = box.querySelector('.line'); // reutiliza la primera línea si está vacía
-      if (first && box.children.length === 1 && !rteValue(first.querySelector('[data-f=concepto]')) && c[0]) { first.querySelector('[data-f=concepto]').innerHTML = richEditorHtml(c[0]); first.querySelector('[data-f=unidad]').value = c[1]; first.querySelector('[data-f=cantidad]').focus(); }
-      else { box.insertAdjacentHTML('beforeend', lineHtml({ concepto:c[0], cantidad:1, unidad:c[1], precio:'' }, i)); const n = box.lastElementChild; n.querySelector(c[0] ? '[data-f=cantidad]' : '[data-f=concepto]').focus(); n.scrollIntoView({ block:'nearest' }); }
+      if (first && box.children.length === 1 && !rteValue(first.querySelector('[data-f=concepto]')) && c[0]) { first.querySelector('[data-f=concepto]').innerHTML = richEditorHtml(c[0]); first.querySelector('[data-f=unidad]').value = c[1]; first.querySelector('[data-f=precio]').value = c[2] === '' ? '' : String(c[2]).replace('.', ','); first.querySelector('[data-f=cantidad]').focus(); }
+      else { box.insertAdjacentHTML('beforeend', lineHtml({ concepto:c[0], cantidad:1, unidad:c[1], precio:c[2] }, i)); const n = box.lastElementChild; n.querySelector(c[0] ? '[data-f=cantidad]' : '[data-f=concepto]').focus(); n.scrollIntoView({ block:'nearest' }); }
       st.upd(); break; }
     case 'rm-line': { const box = st.el.querySelector('#ed-lines'); if (box.children.length > 1) b.closest('.line').remove(); else { box.querySelectorAll('input,textarea').forEach(x=>x.value=''); box.querySelectorAll('.rte-ed').forEach(x=>x.innerHTML='<div><br></div>'); } st.upd(); break; }
     case 'save-ed': saveEditor(st); break;
@@ -1782,8 +1799,8 @@ document.addEventListener('click', async ev => {
     case 'rel-save': { const f = byId('facturas', st.facId); if (!f) break; const nv = st.el.querySelector('#rel-sel').value || null, old = f.presupuestoId || null;
       patch('facturas', f.id, { presupuestoId: nv }).then(() => { popSheet(); toast(nv ? 'Factura relacionada' : 'Relación quitada'); setTimeout(() => { if (nv) syncPres(nv); if (old && old !== nv) syncPres(old); }, 300); }).catch(()=>{}); break; }
     case 'emitir': if (doc) emitir(doc).catch(()=>{}); break;
-    case 'cobrar': { const id = b.dataset.id || (doc && doc.id); const fx = byId('facturas', id); if (id) patch('facturas', id, { estado:'cobrada', fechaCobro: todayISO() }).then(()=>celebrate('¡Cobrada! +' + eur(fx ? totals(fx).total : 0))).catch(()=>{}); break; }
-    case 'descobrar': if (doc) patch('facturas', doc.id, { estado:'pendiente', fechaCobro: null }).catch(()=>{}); break;
+    case 'cobrar': { const id = b.dataset.id || (doc && doc.id); const fx = byId('facturas', id); if (fx) openCobro(fx); break; }
+    case 'descobrar': if (doc && await ask('¿Deshacer los cobros?', 'La factura volverá a quedar pendiente por el total.', 'Deshacer')) patch('facturas', doc.id, { estado:'pendiente', fechaCobro: null, cobros: [] }).then(()=>toast('Factura pendiente otra vez')).catch(()=>{}); break;
     case 'rectificar': if (doc) { const p = { clienteId: doc.clienteId, cliente: doc.cliente, obra: doc.obra, lineas: doc.lineas.map(l=>({ ...l, cantidad: -parseNum(l.cantidad) })), ivaPct: doc.ivaPct, retPct: doc.retPct, notas:'', serie:'R', presupuestoId: doc.presupuestoId || null, refFactura:{ id: doc.id, numero: doc.numero, fecha: doc.fecha }, motivo:'' }; popSheet(); openEditor('factura', null, p); } break;
     case 'pdf': if (doc) savePdf(det.k, doc); break;
     case 'send': if (doc) openSend(det.k, doc); break;
@@ -1907,7 +1924,7 @@ S.introOn = true;
 playIntro(() => { S.introOn = false; if (S.view === 'inicio' && S.ready && !S.animDone) render(); });
 
 /* ---------- avisos de actualización ---------- */
-const APP_VERSION = '2026.10.31-0006';
+const APP_VERSION = '2026.11.16-2131';
 const UPD = { remote: null, notas: '', asked: '' };
 async function checkUpdate(manual){
   if (!/^https?:/.test(location.protocol)) return 'err';
@@ -1950,7 +1967,7 @@ const LS_BACKUP = 'peque-gestion-ultima-copia';
 function downloadBlob(name, blob){ const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.append(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000); }
 function lastBackup(){ try { return localStorage.getItem(LS_BACKUP) || ''; } catch (e) { return ''; } }
 function dumpAll(){
-  const o = {}; if (S.empresa) o['config/empresa'] = clone(S.empresa);
+  const o = {}; if (S.empresa) o['config/empresa'] = clone(S.empresa); if (S.catalogo) o['config/catalogo'] = clone(S.catalogo);
   ['clientes','presupuestos','facturas','gastos'].forEach(c => S[c].forEach(d => { const x = clone(d); delete x.id; o[c + '/' + d.id] = x; }));
   return o;
 }
@@ -1976,7 +1993,7 @@ function backupCard(){
    <p class="muted" style="margin:0 0 12px">Los datos están guardados en la nube y se ven igual en el móvil y en el ordenador. Aun así, guarda una copia en tu ordenador de vez en cuando.${lb ? ' Última copia: ' + fmtDate(lb) + '.' : ''}</p>
    <div class="actions" style="margin-top:0"><button class="btn pri" type="button" data-act="backup">Guardar copia</button><button class="btn" type="button" data-act="restore">Restaurar copia</button></div>
    <input type="file" id="restoreFile" accept=".json,application/json" hidden></div>
-  <div class="card section"><h2>Sesión</h2><p class="muted" style="margin:0 0 12px">Has entrado como <b>${esc(u ? u.email : '')}</b>.</p><button class="btn" type="button" data-act="logout">Cerrar sesión</button></div>`;
+  <div class="card section"><h2>Sesión</h2><p class="muted" style="margin:0 0 12px">Has entrado como <b>${esc(u ? u.email : '')}</b>.</p><div class="actions" style="margin-top:0"><button class="btn" type="button" data-act="pass">Cambiar contraseña</button><button class="btn" type="button" data-act="logout">Cerrar sesión</button></div></div>`;
 }
 function backupBanner(){
   if (S.facturas.length + S.presupuestos.length < 5) return '';
@@ -2003,6 +2020,345 @@ function authMsg(e){
   return 'No se pudo entrar: ' + (e && e.message || 'error desconocido');
 }
 
+/* =====================================================================
+   MEJORAS nov-2026: cobros con fecha y parciales, modelo 347, resumen 390,
+   Excel, envío con Gmail, catálogo de precios, seguimiento de presupuestos,
+   recordatorio de cobro, cambio de contraseña y copias automáticas.
+   ===================================================================== */
+
+/* ---------- cobros ---------- */
+function cobrosDe(f){ return Array.isArray(f.cobros) ? f.cobros : []; }
+function cobrado(f){
+  const ls = cobrosDe(f);
+  if (!ls.length) return f.estado === 'cobrada' ? totals(f).total : 0;
+  return r2(ls.reduce((a, c) => a + (Number(c.importe) || 0), 0));
+}
+const pendienteDe = f => r2(Math.max(0, totals(f).total - cobrado(f)));
+function openCobro(f){
+  const pend = pendienteDe(f);
+  pushSheet({ kind:'form', mini:true, facId:f.id, html: shHead('Registrar cobro ' + esc(f.numero || '')) + `<div class="sb"><div class="fgrid">
+    <label class="f"><span>Fecha del cobro</span><input type="date" id="cb-fecha" value="${todayISO()}" max="${todayISO()}"></label>
+    <label class="f"><span>Importe cobrado €</span><input id="cb-imp" inputmode="decimal" value="${esc(fmtNum(pend))}"></label></div>
+    <p class="foot-note">Total de la factura ${eur(totals(f).total)}${cobrado(f) ? ', ya cobrado ' + eur(cobrado(f)) : ''}. Pendiente: <b>${eur(pend)}</b>. Si cobras una parte, la factura sigue pendiente por el resto.</p></div>
+    <div class="sf"><button class="btn" data-act="close">Cancelar</button><button class="btn pri" data-act="cobro-save">Guardar cobro</button></div>` });
+}
+async function saveCobro(st){
+  const f = byId('facturas', st.facId); if (!f) return;
+  const fecha = st.el.querySelector('#cb-fecha').value, imp = r2(parseNum(st.el.querySelector('#cb-imp').value));
+  if (!fecha) return toast('Pon la fecha del cobro.', true);
+  if (fecha > todayISO()) return toast('La fecha del cobro no puede ser futura.', true);
+  if (!(imp > 0)) return toast('Escribe el importe cobrado.', true);
+  const pend = pendienteDe(f);
+  if (imp > pend + 0.005) return toast('El importe es mayor que lo pendiente (' + eur(pend) + ').', true);
+  const cobros = cobrosDe(f).concat([{ fecha, importe: imp }]);
+  const total = totals(f).total, suma = r2(cobros.reduce((a, c) => a + c.importe, 0));
+  const completa = suma >= total - 0.005;
+  try {
+    await patch('facturas', f.id, { cobros, estado: completa ? 'cobrada' : 'pendiente', fechaCobro: completa ? fecha : null });
+    popSheet(); celebrate(completa ? '¡Cobrada! +' + eur(imp) : 'Cobro de ' + eur(imp) + ' apuntado. Quedan ' + eur(r2(total - suma)));
+  } catch (e) {}
+}
+
+/* ---------- modelo 347 ---------- */
+const UMBRAL_347 = 3005.06;
+const EXCL_347 = ['Cuota de autónomos', 'Seguros'];
+function normNif(s){ return String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); }
+function m347(y){
+  const add = (map, key, nombre, nif, fecha, imp) => {
+    const o = map[key] = map[key] || { nombre, nif, total: 0, q: [0, 0, 0, 0] };
+    if (!o.nif && nif) o.nif = nif;
+    o.total = r2(o.total + imp); o.q[quarterOf(fecha) - 1] = r2(o.q[quarterOf(fecha) - 1] + imp);
+  };
+  const cli = {}, pro = {};
+  emitidas(S.facturas).filter(f => yearOf(f.fecha) === y).forEach(f => {
+    const c = f.cliente || {}; const k = normNif(c.nif) || String(c.nombre || '').trim().toLowerCase();
+    add(cli, k, c.nombre || 'Sin nombre', c.nif || '', f.fecha, totals(f).total);
+  });
+  S.gastos.filter(g => yearOf(g.fecha) === y && !EXCL_347.includes(g.categoria) && (g.proveedor || g.nif)).forEach(g => {
+    const k = normNif(g.nif) || String(g.proveedor || '').trim().toLowerCase();
+    add(pro, k, g.proveedor || 'Sin nombre', g.nif || '', g.fecha, Number(g.total) || 0);
+  });
+  const sel = m => Object.values(m).filter(o => o.total > UMBRAL_347).sort((a, b) => b.total - a.total);
+  const cerca = m => Object.values(m).filter(o => o.total > UMBRAL_347 * 0.8 && o.total <= UMBRAL_347).sort((a, b) => b.total - a.total);
+  return { clientes: sel(cli), proveedores: sel(pro), cercaCli: cerca(cli), cercaPro: cerca(pro) };
+}
+function m347Html(y){
+  const r = m347(y);
+  const tabla = (ls, tipo) => ls.length ? `<div class="tw"><table class="t"><thead><tr><th>${tipo}</th><th class="r">1T</th><th class="r">2T</th><th class="r">3T</th><th class="r">4T</th><th class="r">Total año</th></tr></thead><tbody>
+    ${ls.map(o => `<tr><td><b>${esc(o.nombre)}</b><br><span class="muted" style="font-size:13px">${o.nif ? 'NIF ' + esc(o.nif) : '<span style="color:var(--bad);font-weight:700">Falta el NIF</span>'}</span></td>${o.q.map(v => `<td class="r">${eur(v)}</td>`).join('')}<td class="r"><b>${eur(o.total)}</b></td></tr>`).join('')}</tbody></table></div>`
+    : `<p class="muted" style="margin:4px 0 0">Ningún ${tipo.toLowerCase()} supera ${eur(UMBRAL_347)} en ${y}.</p>`;
+  const cerca = r.cercaCli.concat(r.cercaPro);
+  return `<div class="card section"><h2>Modelo 347, operaciones con terceros</h2>
+    <p class="muted" style="margin:0 0 10px">Se presenta en febrero de ${y + 1}. Hay que declarar a cada cliente y proveedor con el que se superen ${eur(UMBRAL_347)} en el año, IVA incluido.</p>
+    <h3 style="margin:10px 0 6px;font-size:16px">Clientes (ventas)</h3>${tabla(r.clientes, 'Cliente')}
+    <h3 style="margin:14px 0 6px;font-size:16px">Proveedores (compras)</h3>${tabla(r.proveedores, 'Proveedor')}
+    ${cerca.length ? `<p class="foot-note">Cerca del límite: ${cerca.map(o => esc(o.nombre) + ' (' + eur(o.total) + ')').join(', ')}.</p>` : ''}
+    <p class="foot-note">Las compras se agrupan por el NIF o el nombre del proveedor que pongas en cada gasto. No se cuentan la cuota de autónomos ni los seguros. Revísalo con tu gestor antes de presentarlo.</p></div>`;
+}
+
+/* ---------- resumen anual de IVA (390) ---------- */
+function iva390(y){
+  const qs = [1, 2, 3, 4].map(q => iva303(S.facturas, S.gastos, y, q));
+  const rep = {}; let repBase = 0, repCuota = 0, sopBase = 0, sopCuota = 0;
+  qs.forEach(t => { Object.entries(t.rep).forEach(([k, v]) => { rep[k] = rep[k] || { base: 0, cuota: 0 }; rep[k].base = r2(rep[k].base + v.base); rep[k].cuota = r2(rep[k].cuota + v.cuota); });
+    repBase = r2(repBase + t.repBase); repCuota = r2(repCuota + t.repCuota); sopBase = r2(sopBase + t.sopBase); sopCuota = r2(sopCuota + t.sopCuota); });
+  return { qs, rep, repBase, repCuota, sopBase, sopCuota, resultado: r2(repCuota - sopCuota) };
+}
+function iva390Html(y){
+  const a = iva390(y), tipos = Object.keys(a.rep).sort((x, z) => z - x);
+  return `<div class="card section"><h2>Resumen anual de IVA, modelo 390</h2>
+    <p class="muted" style="margin:0 0 8px">Se presenta del 1 al 30 de enero de ${y + 1}, junto con el 303 del cuarto trimestre.</p>
+    <div class="tw"><table class="t"><thead><tr><th>Concepto</th><th class="r">Base</th><th class="r">Cuota</th></tr></thead><tbody>
+    ${tipos.length ? tipos.map(k => `<tr><td>IVA repercutido ${fmtQty(Number(k))} %</td><td class="r">${eur(a.rep[k].base)}</td><td class="r">${eur(a.rep[k].cuota)}</td></tr>`).join('') : `<tr><td class="muted">Sin facturas emitidas</td><td class="r">${eur(0)}</td><td class="r">${eur(0)}</td></tr>`}
+    <tr><td>IVA soportado deducible</td><td class="r">${eur(a.sopBase)}</td><td class="r">−${eur(a.sopCuota)}</td></tr>
+    <tr class="res"><td>Resultado del año</td><td></td><td class="r">${eur(a.resultado)}</td></tr></tbody></table></div>
+    <div class="tw" style="margin-top:8px"><table class="t"><thead><tr><th>Trimestre</th><th class="r">Repercutido</th><th class="r">Soportado</th><th class="r">Resultado</th></tr></thead><tbody>
+    ${a.qs.map((t, i) => `<tr><td>${i + 1}T</td><td class="r">${eur(t.repCuota)}</td><td class="r">${eur(t.sopCuota)}</td><td class="r">${eur(t.resultado)}</td></tr>`).join('')}</tbody></table></div></div>`;
+}
+
+/* ---------- Excel ---------- */
+function loadScript(src){ return new Promise((ok, ko) => { const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = ko; document.head.append(s); }); }
+async function excelLibros(){
+  const y = S.year;
+  try { if (!window.XLSX) await loadScript('https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js'); }
+  catch (e) { return toast('No se pudo preparar el Excel. Revisa la conexión.', true); }
+  const X = window.XLSX, wb = X.utils.book_new();
+  const hoja = (nombre, filas, anchos) => { const ws = X.utils.aoa_to_sheet(filas); ws['!cols'] = anchos.map(w => ({ wch: w })); X.utils.book_append_sheet(wb, ws, nombre); };
+  const fac = emitidas(S.facturas).filter(f => yearOf(f.fecha) === y).sort((a, b) => a.numero.localeCompare(b.numero));
+  hoja('Facturas emitidas', [['Número', 'Fecha', 'Cliente', 'NIF cliente', 'Base imponible', 'Tipo IVA %', 'Cuota IVA', 'Retención', 'Total', 'Cobrado', 'Pendiente', 'Estado', 'Fecha cobro']]
+    .concat(fac.map(f => { const t = totals(f); return [f.numero, fmtDate(f.fecha), f.cliente?.nombre || '', f.cliente?.nif || '', t.base, t.ivaPct, t.iva, t.ret, t.total, cobrado(f), pendienteDe(f), ESTADO_TXT[estadoFactura(f)], f.fechaCobro ? fmtDate(f.fechaCobro) : '']; })),
+    [12, 11, 32, 13, 13, 9, 11, 10, 12, 12, 12, 10, 11]);
+  const gas = S.gastos.filter(g => yearOf(g.fecha) === y).sort((a, b) => a.fecha.localeCompare(b.fecha));
+  hoja('Gastos', [['Fecha', 'Proveedor', 'NIF proveedor', 'Concepto', 'Categoría', 'Base', 'Tipo IVA %', 'Cuota IVA', 'Total', 'Deducible']]
+    .concat(gas.map(g => [fmtDate(g.fecha), g.proveedor || '', g.nif || '', g.concepto || '', g.categoria || '', Number(g.base) || 0, Number(g.ivaPct) || 0, Number(g.cuota) || 0, Number(g.total) || 0, g.deducible === false ? 'No' : 'Sí'])),
+    [11, 28, 13, 30, 20, 11, 9, 10, 11, 9]);
+  const a = iva390(y);
+  hoja('Resumen IVA (390)', [['Resumen anual de IVA ' + y], [], ['Concepto', 'Base', 'Cuota']]
+    .concat(Object.keys(a.rep).sort((x, z) => z - x).map(k => ['IVA repercutido ' + k + ' %', a.rep[k].base, a.rep[k].cuota]))
+    .concat([['IVA soportado deducible', a.sopBase, -a.sopCuota], ['Resultado del año', '', a.resultado], [], ['Trimestre', 'Repercutido', 'Soportado', 'Resultado']])
+    .concat(a.qs.map((t, i) => [(i + 1) + 'T', t.repCuota, t.sopCuota, t.resultado])), [26, 14, 14, 14]);
+  const ir = [1, 2, 3, 4].map(q => irpf130(S.facturas, S.gastos, y, q));
+  hoja('IRPF (130)', [['Pagos fraccionados de IRPF ' + y + ' (acumulado desde el 1 de enero)'], [], ['Trimestre', 'Ingresos', 'Gastos', 'Rendimiento', '20 %', 'Retenciones', 'Pagado antes', 'A ingresar']]
+    .concat(ir.map((t, i) => [(i + 1) + 'T', t.ingresos, t.gastos, t.rend, t.cuota, t.ret, t.prev, t.aIngresar])), [12, 13, 13, 13, 12, 12, 13, 12]);
+  const m = m347(y), f347 = (ls, tipo) => ls.map(o => [tipo, o.nombre, o.nif || 'FALTA NIF', o.q[0], o.q[1], o.q[2], o.q[3], o.total]);
+  hoja('Modelo 347', [['Operaciones con terceros de más de 3.005,06 € en ' + y + ' (IVA incluido)'], [], ['Tipo', 'Nombre', 'NIF', '1T', '2T', '3T', '4T', 'Total']]
+    .concat(f347(m.clientes, 'Cliente (ventas)')).concat(f347(m.proveedores, 'Proveedor (compras)')), [18, 32, 13, 12, 12, 12, 12, 13]);
+  const out = X.write(wb, { bookType: 'xlsx', type: 'array' });
+  try { await S.dl.save({ filename: 'PEQUE libros y resumen ' + y + '.xlsx', data: new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }) }); toast('Excel guardado en Descargas'); }
+  catch (e) { toast('No se pudo descargar el Excel.', true); }
+}
+
+/* ---------- envío con Gmail (PDF adjunto) ---------- */
+const GM = { token: null, exp: 0, email: '' };
+try { GM.email = localStorage.getItem('peque-gmail') || ''; } catch (e) {}
+async function gmailToken(force){
+  if (!force && GM.token && Date.now() < GM.exp) return GM.token;
+  const app = (firebase.apps || []).find(a => a.name === 'gmail') || firebase.initializeApp(window.FIREBASE_CONFIG, 'gmail');
+  const p = new firebase.auth.GoogleAuthProvider();
+  p.addScope('https://www.googleapis.com/auth/gmail.send');
+  p.setCustomParameters(GM.email ? { login_hint: GM.email } : { prompt: 'select_account' });
+  const r = await app.auth().signInWithPopup(p);
+  const cred = r.credential || (firebase.auth.GoogleAuthProvider.credentialFromResult && firebase.auth.GoogleAuthProvider.credentialFromResult(r));
+  if (!cred || !cred.accessToken) throw Object.assign(new Error('sin permiso de Gmail'), { code: 'gmail/no-token' });
+  GM.token = cred.accessToken; GM.exp = Date.now() + 50 * 60 * 1000; GM.email = (r.user && r.user.email) || GM.email;
+  try { localStorage.setItem('peque-gmail', GM.email); } catch (e) {}
+  return GM.token;
+}
+const b64utf8 = s => btoa(unescape(encodeURIComponent(s)));
+const mimeWord = s => /^[\x20-\x7e]*$/.test(s) ? s : '=?UTF-8?B?' + b64utf8(s) + '?=';
+const wrap76 = s => s.replace(/.{1,76}/g, '$&\r\n').trim();
+function blobB64(blob){ return new Promise((ok, ko) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(',')[1]); r.onerror = ko; r.readAsDataURL(blob); }); }
+async function buildMime(to, subj, body, filename, pdfBlob){
+  const bd = 'peque_' + Math.random().toString(36).slice(2), ascii = filename.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\x20-\x7e]/g, '_').replace(/"/g, '');
+  return ['To: ' + to, 'Subject: ' + mimeWord(subj), 'MIME-Version: 1.0', 'Content-Type: multipart/mixed; boundary="' + bd + '"', '',
+    '--' + bd, 'Content-Type: text/plain; charset="UTF-8"', 'Content-Transfer-Encoding: base64', '', wrap76(b64utf8(body)),
+    '--' + bd, 'Content-Type: application/pdf; name="' + ascii + '"', 'Content-Transfer-Encoding: base64',
+    'Content-Disposition: attachment; filename="' + ascii + '"; filename*=UTF-8\'\'' + encodeURIComponent(filename), '', wrap76(await blobB64(pdfBlob)),
+    '--' + bd + '--', ''].join('\r\n');
+}
+function gmailErr(e){
+  const c = (e && e.code) || '';
+  if (c.includes('popup-closed') || c.includes('cancelled-popup')) return '';
+  if (c.includes('popup-blocked')) return 'El navegador ha bloqueado la ventana de Google. Permite las ventanas emergentes para esta página.';
+  if (c.includes('operation-not-allowed') || c.includes('unauthorized-domain')) return 'El envío con Gmail aún no está activado. Usa “Abrir correo” o “Compartir PDF” mientras tanto.';
+  if (c === 'gmail/api-off') return 'Falta activar la API de Gmail en el proyecto. Usa “Abrir correo” mientras tanto.';
+  if (c === 'gmail/no-token') return 'Google no ha dado permiso para enviar. Marca la casilla de “Enviar correo electrónico” al aceptar.';
+  return 'No se pudo enviar con Gmail: ' + ((e && e.message) || 'error de conexión');
+}
+async function gmailSend(st){
+  const d = byId(st.col, st.docId); if (!d) return;
+  const f = sendFields(st);
+  const dest = f.to.split(/[,;\s]+/).filter(Boolean);
+  if (!dest.length) return toast('Escribe el correo del cliente.', true);
+  if (!dest.every(a => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(a))) return toast('Revisa la dirección de correo.', true);
+  let doc; try { doc = pdfFor(st.k, d); } catch (e) { return toast('No se pudo crear el PDF.', true); }
+  const btn = st.el.querySelector('[data-act=gmail-send]'); if (btn) { btn.disabled = true; btn.textContent = 'Enviando…'; }
+  const reset = () => { if (btn) { btn.disabled = false; btn.textContent = 'Enviar con Gmail'; } };
+  try {
+    const raw = await buildMime(dest.join(', '), f.subj, f.body, pdfName(st.k, d), doc.output('blob'));
+    const send = tok => fetch('https://gmail.googleapis.com/upload/gmail/v1/users/me/messages/send?uploadType=media', { method: 'POST', headers: { Authorization: 'Bearer ' + tok, 'Content-Type': 'message/rfc822' }, body: raw });
+    let r = await send(await gmailToken());
+    if (r.status === 401) r = await send(await gmailToken(true));
+    if (!r.ok) { let m = ''; try { m = (await r.json()).error.message; } catch (e) {} throw Object.assign(new Error(m || 'error ' + r.status), { code: r.status === 403 && /has not been used|disabled/i.test(m) ? 'gmail/api-off' : 'gmail/' + r.status }); }
+    st.sentTo = dest.join(', '); st.via = 'gmail';
+    await markSent(st);
+    toast('Enviado desde ' + (GM.email || 'tu Gmail') + ' con el PDF adjunto', 'good');
+  } catch (e) { reset(); const m = gmailErr(e); if (m) toast(m, true); }
+}
+
+/* ---------- catálogo de precios ---------- */
+function catalogo(){
+  const c = S.catalogo && Array.isArray(S.catalogo.items) ? S.catalogo.items : null;
+  return c || CONCEPTOS.map(([concepto, unidad]) => ({ concepto, unidad, precio: '' }));
+}
+const catTitulo = it => richPlain(it.concepto).split('\n')[0];
+function catRowHtml(it, i){
+  return `<div class="line cat-row" data-i="${i}">
+    <label class="f c"><span>Trabajo (la primera línea es el nombre del botón)</span><textarea data-k="concepto" rows="2" style="min-height:48px">${esc(richPlain(it.concepto))}</textarea></label>
+    <label class="f"><span>Unidad</span><select data-k="unidad">${UNIDADES.map(u => `<option ${u === it.unidad ? 'selected' : ''}>${u}</option>`).join('')}</select></label>
+    <label class="f"><span>Precio € (sin IVA)</span><input data-k="precio" inputmode="decimal" placeholder="Sin precio" value="${it.precio === '' || it.precio == null ? '' : esc(fmtNum(it.precio))}"></label>
+    <button type="button" class="rm" data-act="cat-rm">Quitar</button></div>`;
+}
+function vCatalogo(){
+  const ls = catalogo();
+  return `<div class="row"><h1 class="view" style="flex:1">Catálogo de precios</h1></div>
+  <p class="muted" style="margin:0 0 12px">Estos trabajos salen como botones al hacer un presupuesto o una factura. Si tienen precio, se rellena solo; luego puedes cambiarlo en cada documento.</p>
+  <form id="cat-form" novalidate><div class="lines" id="cat-lines">${ls.map(catRowHtml).join('')}</div>
+  <button type="button" class="btn" style="width:100%;margin-top:10px" data-act="cat-add">+ Añadir trabajo</button>
+  <div class="row" style="margin-top:14px"><button class="btn pri" type="button" data-act="cat-save" ${S.canWrite ? '' : 'disabled'}>Guardar catálogo</button></div></form>`;
+}
+async function saveCatalogo(){
+  const items = [...document.querySelectorAll('#cat-lines .cat-row')].map(n => {
+    const p = n.querySelector('[data-k=precio]').value.trim();
+    return { concepto: n.querySelector('[data-k=concepto]').value.replace(/\s+$/, ''), unidad: n.querySelector('[data-k=unidad]').value, precio: p === '' ? '' : r2(parseNum(p)) };
+  }).filter(x => x.concepto.trim());
+  try { await put('config', 'catalogo', { items }); S.catDirty = false; toast('Catálogo guardado'); } catch (e) {}
+}
+
+/* ---------- seguimiento de presupuestos ---------- */
+const DIAS_SEGUIR = 7;
+function seguimiento(p){
+  if ((p.estado || 'borrador') !== 'enviado') return null;
+  const env = (p.enviado && p.enviado.fecha) || p.fecha, hoy = todayISO();
+  const dias = daysBetween(env, hoy), caduca = addDays(p.fecha, Number(p.validez) || 30), queda = daysBetween(hoy, caduca);
+  const ult = p.recordado || env, desdeUlt = daysBetween(ult, hoy);
+  return { dias, caduca, queda, caducado: queda < 0, seguir: desdeUlt >= DIAS_SEGUIR || (queda >= 0 && queda <= 5 && !p.recordado) };
+}
+function segTxt(s){
+  if (!s) return '';
+  if (s.caducado) return `<span style="color:var(--bad);font-weight:700">Caducó el ${fmtDate(s.caduca)}</span>`;
+  if (s.queda <= 5) return `<span style="color:var(--bad);font-weight:700">Caduca ${s.queda === 0 ? 'hoy' : 'en ' + s.queda + (s.queda === 1 ? ' día' : ' días')}</span>`;
+  if (s.seguir) return `<span style="color:var(--warn);font-weight:700">Enviado hace ${s.dias} días, sin respuesta</span>`;
+  return 'Enviado hace ' + s.dias + (s.dias === 1 ? ' día' : ' días');
+}
+
+/* ---------- plantillas de recordatorio ---------- */
+function plantilla(k, d, modo){
+  const e = emp(), c = d.cliente || {}, nombre = c.nombre ? ' ' + c.nombre.split(' ')[0] : '';
+  const firma = `\n\nUn saludo,\n${e.titular}\n${e.nombre}\nTel. ${e.tel}`;
+  if (modo === 'seguir') return { subj: `Presupuesto ${d.numero || ''} - ${e.nombre}`,
+    body: `Hola${nombre},\n\nTe escribo por el presupuesto ${d.numero || ''}${d.obra ? ' de la obra ' + d.obra : ''} que te envié el ${fmtDate((d.enviado && d.enviado.fecha) || d.fecha)}, por ${eur(totals(d).total)}. Te lo vuelvo a adjuntar.\n\nSi tienes cualquier duda o quieres cambiar algo, dímelo y lo ajustamos. El presupuesto es válido hasta el ${fmtDate(addDays(d.fecha, Number(d.validez) || 30))}.` + firma };
+  if (modo === 'cobro') { const pend = pendienteDe(d);
+    return { subj: `Recordatorio de pago: factura ${d.numero} - ${e.nombre}`,
+      body: `Hola${nombre},\n\nTe recuerdo que la factura ${d.numero}${d.obra ? ' de la obra ' + d.obra : ''}, de ${eur(totals(d).total)}, ${d.vencimiento && d.vencimiento < todayISO() ? 'venció el ' + fmtDate(d.vencimiento) : 'vence el ' + fmtDate(d.vencimiento)}${pend < totals(d).total ? ' y queda pendiente ' + eur(pend) : ''}. Te la adjunto de nuevo.${e.iban ? '\n\nPuedes pagarla por transferencia a la cuenta ' + e.iban + '.' : ''}\n\nSi ya la has pagado, no hagas caso de este correo y perdona la molestia.` + firma }; }
+  return null;
+}
+
+/* ---------- cambiar contraseña ---------- */
+function openPass(){
+  pushSheet({ kind:'form', mini:true, html: shHead('Cambiar contraseña') + `<form class="sb" id="pw-form" novalidate><div class="fgrid r1">
+    <label class="f full"><span>Contraseña actual</span><input type="password" id="pw-old" autocomplete="current-password"></label>
+    <label class="f full"><span>Contraseña nueva (mínimo 8 caracteres)</span><input type="password" id="pw-new" autocomplete="new-password"></label>
+    <label class="f full"><span>Repite la contraseña nueva</span><input type="password" id="pw-rep" autocomplete="new-password"></label></div>
+    <p class="foot-note">Después tendrás que usar la nueva para entrar en el móvil y en el ordenador.</p></form>
+    <div class="sf"><button class="btn" data-act="close">Cancelar</button><button class="btn pri" data-act="pw-save">Cambiar</button></div>` });
+}
+async function savePass(st){
+  const el = st.el, old = el.querySelector('#pw-old').value, nw = el.querySelector('#pw-new').value, rp = el.querySelector('#pw-rep').value;
+  if (!old) return toast('Escribe la contraseña actual.', true);
+  if (nw.length < 8) return toast('La nueva debe tener al menos 8 caracteres.', true);
+  if (nw !== rp) return toast('Las dos contraseñas nuevas no coinciden.', true);
+  if (nw === old) return toast('La nueva es igual que la actual.', true);
+  const u = firebase.auth().currentUser; if (!u) return toast('Vuelve a entrar en la app.', true);
+  const btn = el.parentNode.querySelector('[data-act=pw-save]'); if (btn) btn.disabled = true;
+  try {
+    await u.reauthenticateWithCredential(firebase.auth.EmailAuthProvider.credential(u.email, old));
+    await u.updatePassword(nw);
+    popSheet(); celebrate('Contraseña cambiada');
+  } catch (e) {
+    if (btn) btn.disabled = false;
+    const c = (e && e.code) || '';
+    toast(c.includes('wrong-password') || c.includes('invalid-credential') || c.includes('invalid-login') ? 'La contraseña actual no es correcta.' : c.includes('weak-password') ? 'La contraseña nueva es demasiado débil.' : c.includes('too-many') ? 'Demasiados intentos. Espera unos minutos.' : 'No se pudo cambiar: ' + ((e && e.message) || 'error'), true);
+  }
+}
+
+/* ---------- copias automáticas en la nube ---------- */
+const COPIA_CADA = 7, COPIAS_MAX = 8, TROZO = 800000;
+async function listaCopias(){
+  const s = await S.db.collection('copias').get();
+  return s.docs.map(d => ({ id: d.id, ...d.data() })).filter(d => d.tipo === 'copia').sort((a, b) => b.fecha.localeCompare(a.fecha));
+}
+async function copiaAuto(force){
+  if (!S.db || !S.ready || !S.canWrite) return;
+  if (S.facturas.length + S.presupuestos.length + S.gastos.length === 0) return;
+  try {
+    const ls = await listaCopias(); S.copias = ls;
+    if (!force && ls.length && daysBetween(ls[0].fecha.slice(0, 10), todayISO()) < COPIA_CADA) return;
+    const json = JSON.stringify({ app: 'peque-gestion', version: 1, fecha: new Date().toISOString(), datos: dumpAll() });
+    const id = 'c' + new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14), partes = Math.ceil(json.length / TROZO);
+    for (let i = 0; i < partes; i++) await S.db.collection('copias').doc(id + '_p' + i).set({ tipo: 'trozo', copia: id, i, data: json.slice(i * TROZO, (i + 1) * TROZO) });
+    const n = Object.keys(JSON.parse(json).datos).length;
+    await S.db.collection('copias').doc(id).set({ tipo: 'copia', fecha: new Date().toISOString(), partes, registros: n, por: (S.user && S.user.email) || '' });
+    S.copias = [{ id, fecha: new Date().toISOString(), partes, registros: n }].concat(ls);
+    for (const v of S.copias.slice(COPIAS_MAX)) { for (let i = 0; i < (v.partes || 1); i++) await S.db.collection('copias').doc(v.id + '_p' + i).delete(); await S.db.collection('copias').doc(v.id).delete(); }
+    S.copias = S.copias.slice(0, COPIAS_MAX);
+    if (S.view === 'ajustes' && !S.ajDirty) render();
+    if (force) toast('Copia hecha en la nube');
+  } catch (e) { if (force) toast('No se pudo hacer la copia: ' + ((e && e.message) || 'error'), true); }
+}
+async function leerCopia(id){
+  const meta = await S.db.collection('copias').doc(id).get(); if (!meta.exists) throw new Error('La copia ya no existe');
+  let json = ''; for (let i = 0; i < (meta.data().partes || 1); i++) { const p = await S.db.collection('copias').doc(id + '_p' + i).get(); json += p.data().data; }
+  return JSON.parse(json);
+}
+async function restaurarObjeto(o, txt){
+  const keys = Object.keys(o.datos).filter(k => /^(config|clientes|presupuestos|facturas|gastos)\/[A-Za-z0-9_\-.~:@+]+$/.test(k));
+  if (!await ask('¿Restaurar la copia?', txt + ` con ${keys.length} registros. Los registros de la copia sustituyen a los que tengan el mismo identificador; el resto no se toca.`, 'Restaurar', true)) return;
+  try { for (let i = 0; i < keys.length; i += 400) { const b = S.db.batch(); keys.slice(i, i + 400).forEach(k => b.set(S.db.doc(k), o.datos[k])); await b.commit(); } toast('Copia restaurada'); }
+  catch (e) { toast('No se pudo restaurar la copia: ' + (e.message || 'error de conexión'), true); }
+}
+function copiasHtml(){
+  const ls = S.copias || [];
+  return `<div class="card section"><h2>Copias automáticas en la nube</h2>
+    <p class="muted" style="margin:0 0 10px">Cada semana la app guarda sola una copia de clientes, presupuestos, facturas y gastos (sin las fotos de los tickets). Se guardan las ${COPIAS_MAX} últimas.${ls.length ? ' Última: ' + fmtDate(ls[0].fecha.slice(0, 10)) + '.' : ''}</p>
+    ${ls.length ? `<div class="list">${ls.map(c => `<div class="chipcard" style="--sw:var(--idle-bg)"><span class="sw"><b>${fmtDate(c.fecha.slice(0, 10)).slice(0, 5)}</b></span><span class="main"><span class="t">${fmtDate(c.fecha.slice(0, 10))}</span><span class="s">${c.registros || ''} registros</span></span>
+      <span class="amt" style="flex-direction:row;gap:6px"><button class="btn sm" type="button" data-act="copia-dl" data-id="${c.id}">Descargar</button><button class="btn sm" type="button" data-act="copia-rest" data-id="${c.id}" ${S.canWrite ? '' : 'disabled'}>Restaurar</button></span></div>`).join('')}</div>` : `<p class="muted" style="margin:0">Todavía no hay ninguna.</p>`}
+    <div class="actions"><button class="btn" type="button" data-act="copia-ya" ${S.canWrite ? '' : 'disabled'}>Hacer una copia ahora</button></div></div>`;
+}
+
+/* ---------- eventos de las mejoras ---------- */
+document.addEventListener('click', async ev => {
+  const b = ev.target.closest('[data-act]'); if (!b) return;
+  const st = S.stack[S.stack.length - 1], det = curDetail();
+  const doc = det ? byId(det.k === 'factura' ? 'facturas' : 'presupuestos', det.id) : null;
+  switch (b.dataset.act) {
+    case 'cobro-save': saveCobro(st); break;
+    case 'excel': excelLibros(); break;
+    case 'gmail-send': gmailSend(st); break;
+    case 'cat-add': { const box = document.getElementById('cat-lines'); box.insertAdjacentHTML('beforeend', catRowHtml({ concepto: '', unidad: 'm²', precio: '' }, box.children.length)); box.lastElementChild.querySelector('textarea').focus(); S.catDirty = true; break; }
+    case 'cat-rm': b.closest('.cat-row').remove(); S.catDirty = true; break;
+    case 'cat-save': saveCatalogo(); break;
+    case 'seguir': if (doc) openSend(det.k, doc, 'seguir'); break;
+    case 'recordar-cobro': if (doc) openSend(det.k, doc, 'cobro'); break;
+    case 'pass': openPass(); break;
+    case 'pw-save': savePass(st); break;
+    case 'copia-ya': b.disabled = true; await copiaAuto(true); b.disabled = false; break;
+    case 'copia-dl': try { const o = await leerCopia(b.dataset.id); downloadBlob('PEQUE copia de seguridad ' + o.fecha.slice(0, 10) + '.json', new Blob([JSON.stringify(o, null, 1)], { type: 'application/json' })); toast('Copia guardada en Descargas'); } catch (e) { toast('No se pudo leer la copia.', true); } break;
+    case 'copia-rest': try { const o = await leerCopia(b.dataset.id); await restaurarObjeto(o, 'Copia automática del ' + fmtDate(o.fecha.slice(0, 10))); } catch (e) { toast('No se pudo leer la copia.', true); } break;
+  }
+});
+document.addEventListener('input', ev => { if (ev.target.closest && ev.target.closest('#cat-form')) S.catDirty = true; });
+
 /* ---------- arranque ---------- */
 S.dl = { save: async ({ filename, data }) => { downloadBlob(filename, data instanceof Blob ? data : new Blob([data], { type: filename.endsWith('.csv') ? 'text/csv;charset=utf-8' : 'application/octet-stream' })); return { status:'saved' }; } };
 S.authState = 'loading';
@@ -2014,6 +2370,8 @@ function startData(){
   const onErr = e => { if (e && e.code === 'permission-denied') { S.denied = true; render(); } else toast('Se perdió la conexión con los datos. Recarga la página.', true); };
   ['clientes','presupuestos','facturas','gastos'].forEach(col => unsubs.push(S.db.collection(col).onSnapshot(s => { S[col] = s.docs.map(d => ({ id:d.id, ...d.data() })); mark(col); }, onErr)));
   unsubs.push(S.db.doc('config/empresa').onSnapshot(s => { S.empresa = s.exists ? s.data() : null; mark('empresa'); }, onErr));
+  unsubs.push(S.db.doc('config/catalogo').onSnapshot(s => { S.catalogo = s.exists ? s.data() : null; if (S.ready) render(); }, () => {}));
+  clearTimeout(S.copiaT); S.copiaT = setTimeout(() => copiaAuto(false), 8000);
 }
 (() => {
   const cfg = window.FIREBASE_CONFIG;
