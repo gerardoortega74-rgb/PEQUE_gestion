@@ -631,6 +631,11 @@ function buildPdf(JsPDF, kind, d, emp, logo, firma) {
   if (isP) {
     const conds = richConds(emp.condiciones), autoPago = !hasRich(emp.condiciones);
     if (autoPago) conds.forEach(c => { if (/pago/i.test(c.plainTitle)) { c.title = c.title.map(r => ({ ...r, f:'#fff200' })); c.text = c.text.map(r => ({ ...r, b:true, f:'#fff200' })); } });
+    { const iban = String(emp.iban || '').trim(), pc = conds.find(c => /pago/i.test(c.plainTitle));
+      if (iban && pc && !pc.text.map(r => r.t).join('').replace(/\s/g, '').toUpperCase().includes(iban.replace(/\s/g, '').toUpperCase())) {
+        const last = pc.text[pc.text.length - 1] || {}, st = { b:true, c:last.c || null, f:last.f || null };
+        pc.text = pc.text.concat([{ ...st, t:'\nNº de cuenta: ' + iban }]);
+      } }
     para('Nota: el presupuesto comprende únicamente los trabajos descritos.' + (conds.length ? ' Las condiciones, exclusiones y forma de pago se detallan en la página siguiente.' : ''));
     doc.addPage(); header();
     let y3 = 58;
@@ -1924,7 +1929,7 @@ S.introOn = true;
 playIntro(() => { S.introOn = false; if (S.view === 'inicio' && S.ready && !S.animDone) render(); });
 
 /* ---------- avisos de actualización ---------- */
-const APP_VERSION = '2026.11.16-2131';
+const APP_VERSION = '2026.11.17-1936';
 const UPD = { remote: null, notas: '', asked: '' };
 async function checkUpdate(manual){
   if (!/^https?:/.test(location.protocol)) return 'err';
